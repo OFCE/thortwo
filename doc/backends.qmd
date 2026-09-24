@@ -1,0 +1,183 @@
+---
+title: "Choosing a backend"
+subtitle: "Compiled or pure R, sparse or dense: what the difference is, with benchmarks from 3 to 6,791 equations"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+execute:
+  eval: false
+---
+
+**In short:**
+
+- **`"sparse"`, the default:** compiled. The fastest solver by far, and its
+  compiled code is cached, so it is the right choice for normal work: a model
+  you solve more than once, scenarios, saved models, and any large model.
+- **`"sparse-r"`: pure R, no compiler needed.** Its solve is slower, but it
+  skips compilation, so a one-off run of a small or medium model you have just
+  edited is faster than with `"sparse"`. It is also the choice when the
+  computer has no working C++ compiler.
+- **`"dense-cpp"`:** never the best choice. It is kept as an independent
+  cross-check of `"sparse"`.
+
+```{r}
+model <- thor_model("mymodel", "mymodel.txt")                        # sparse
+model <- thor_model("mymodel", "mymodel.txt", backend = "sparse-r")  # pure R
+```
+
+`"dense-r"`, the name of the former pure-R backend, still works and now means
+`"sparse-r"`. Models saved with it are converted automatically when loaded.
+
+## What a backend is
+
+The backend is chosen when the model is built and stays with it. All three
+solve exactly the same way: period by period, block by block (prologue, heart,
+epilogue), with Newton's method, from the same starting point. They differ in
+two things.
+
+**How the jacobian is stored.** The jacobian is the table of derivatives of
+every equation with respect to every variable. In an economic model it is
+almost entirely zeros: in ThreeME 13x13's heart, an equation involves 3.5 of
+the block's 4,663 variables on average.
+
+- **Dense** stores the whole table, zeros included. For ThreeME 13x13's heart,
+  that is 21.7 million numbers, of which 16,513 are not zero (0.08%).
+- **Sparse** stores only the non-zero entries and their positions.
+
+Newton's method solves a linear system with this table at every iteration. A
+dense solver works through all the zeros; its cost grows with the **cube** of
+the number of equations. A sparse solver skips them; its cost grows roughly in
+proportion to the number of non-zero entries.
+
+**What code evaluates the equations.**
+
+| backend | jacobian | equations evaluated by | linear solver | needs a C++ compiler |
+|---|---|---|---|---|
+| `"sparse"` | sparse | compiled C++ | Eigen `SparseLU` | yes |
+| `"sparse-r"` | sparse | R | `Matrix` package, sparse LU | no |
+| `"dense-cpp"` | dense | compiled C++ | Eigen `PartialPivLU` | yes |
+
+`Matrix` is installed with every copy of R, so `"sparse-r"` needs nothing
+beyond R itself.
+
+**The results are the same.** In every benchmark below, the three backends
+agree to within about `1e-12` (median relative difference): the differences
+are rounding, nothing more. The compiled backends report about twice as many
+Newton iterations as `"sparse-r"`, because by default they reuse the
+factorised jacobian between iterations (see
+[Building and solving a model](getting-started.qmd)); with
+`reuse_jacobian = FALSE` all three take exactly the same number.
+
+## Benchmarks
+
+Measured on an Apple M1 with 16 GB, R 4.6.1, thortwo as of 5 October 2026,
+with the default settings. Every build starts cold: nothing is taken from the
+cache.
+
+| model | equations | heart block | periods |
+|---|---|---|---|
+| training (ThreeME_V4 `training`, 01.2) | 3 | 2 | 32 years |
+| Opale | 496 | 98 | 40 quarters |
+| ThreeME 4x4 | 1,729 | 1,107 | 35 years |
+| ThreeME 8x8 | 3,628 | 2,517 | 35 years |
+| ThreeME 13x13 ¹ | 6,791 | 4,663 | 38 years |
+
+¹ With one equation patched, because the original 13x13 calibration leaves the
+price of capital of sector `sgzx` undetermined (see `ThreeME_V4/FROM_THORTWO.md`),
+and with `Verif_ALL` written without its square root.
+
+### Building
+
+The build has two parts: the work in R (parsing, decomposing, differentiating,
+writing the code), which is the same for every backend, then compiling that
+code, which `"sparse-r"` skips.
+
+| model | R part | + compile: sparse | + compile: dense-cpp |
+|---|---|---|---|
+| training | 0.15 s | 6 s | 4 s |
+| Opale | 0.5 s | 6 s | 5 s |
+| ThreeME 4x4 | 1.3 s | 8 s | 6 s |
+| ThreeME 8x8 | 3.4 s | 11 s | 10 s |
+| ThreeME 13x13 | 7 s | 15 s | 12 s |
+
+Even for three equations the compile takes several seconds: that is the fixed
+cost of compiling the solver itself.
+
+All of this is paid once per version of a model. A built model is cached,
+compiled code included: calling `thor_model()` again on an unchanged model,
+even in a new R session, loads it in under a second. See
+[Building and solving a model](getting-started.qmd).
+
+### Solving
+
+| model | sparse | sparse-r | dense-cpp |
+|---|---|---|---|
+| training | < 0.01 s | 0.01 s | < 0.01 s |
+| Opale | **0.008 s** | 0.66 s | 0.05 s |
+| ThreeME 4x4 | **0.06 s** | 2.4 s | 1.4 s |
+| ThreeME 8x8 | **0.34 s** | 8.3 s | 21 s |
+| ThreeME 13x13 | **1.2 s** | 18 s | 2 min |
+
+`"sparse"` solves 15 to 80 times faster than `"sparse-r"`, because its
+equations are compiled. `"dense-cpp"` falls behind both as the model grows:
+its dense linear algebra costs more than evaluating the equations in R.
+
+For comparison, the former dense pure-R backend took 48 s on ThreeME 4x4,
+6 min 45 s on 8x8, and could not build 13x13.
+
+### One run from scratch
+
+What a single run of a freshly edited model costs (build, compile if any,
+solve):
+
+| model | sparse | sparse-r |
+|---|---|---|
+| training | 5.7 s | **0.15 s** |
+| Opale | 6.1 s | **1.2 s** |
+| ThreeME 4x4 | 9.0 s | **3.7 s** |
+| ThreeME 8x8 | 15 s | **12 s** |
+| ThreeME 13x13 | **23 s** | 26 s |
+
+From the second solve onwards, or as soon as the model is in the cache,
+`"sparse"` is ahead at every size.
+
+## Which backend to use
+
+| situation | backend |
+|---|---|
+| normal work: solving a model several times, scenarios, saved models | `"sparse"` |
+| editing a model and checking each change with one run | `"sparse-r"` |
+| no working C++ compiler (`thor_check_toolchain()` fails) | `"sparse-r"` |
+| reading the generated code while debugging a small model | `"sparse-r"`: the code is plain R |
+| checking the sparse solver against an independent one | `"dense-cpp"` |
+
+## ThreeME 29x33
+
+**Use `"sparse"`.** ThreeME 29x33 has 26,439 equations, and its heart block
+alone has 18,380. It is not in the tables above, since a full set of runs on
+three backends would take hours, but the sparse backend has been measured on
+its own:
+
+| ThreeME 29x33, `"sparse"` | time |
+|---|---|
+| build: work in R | 52 s |
+| build: compile | 44 s |
+| build, when the model is already in the cache | 0.5 s |
+| solve, 38 years | 74 s |
+
+These figures are with `Verif_ALL` written without its square root; with it,
+the compile is 112 s. A week before these measurements the build took 78
+minutes and the solve over 3.
+
+- **The solve is about one factorisation per period.** One factorisation of
+  the heart's jacobian takes 1.4 s, and the default solver does about one per
+  period; with plain Newton (`reuse_jacobian = FALSE`) it does four, and the
+  solve takes 208 s.
+- **Sparse-r works too, but expect a much longer solve.** It skips the
+  compile, but on 13x13 its solve is 15 times slower than sparse's. Not
+  measured at this size.
+- **Dense is out of reach.** One dense jacobian for the heart is 18,380 ×
+  18,380 = 338 million numbers, or 2.7 GB, and each factorisation does about 60
+  times the work of 13x13's.

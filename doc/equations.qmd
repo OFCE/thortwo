@@ -1,0 +1,302 @@
+---
+title: "Writing model equations"
+subtitle: "The model file, the equation syntax, and what thortwo can differentiate"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+execute:
+  eval: false
+---
+
+This page is for anyone writing or editing a model file by hand. If your model
+comes out of the ThreeME / EViews toolchain, `ermeeth2::prg_to_thor()` writes
+the file for you, and this page explains what is in it and why.
+
+## 1. The model file
+
+A model is a plain `.txt` file with four sections, always in this order:
+
+```
+endogenous :
+ch, i, y
+
+exogenous :
+g
+
+coefficients :
+mpc, inv_share
+
+equations :
+y = ch + i + g
+consumption : ch = mpc * lag(y, 1)
+i = inv_share * y
+```
+
+| section | what goes in it |
+|---|---|
+| `endogenous` | the variables the model solves for |
+| `exogenous` | variables you supply over the whole simulation |
+| `coefficients` | parameters you supply; in practice constants |
+| `equations` | one equation per line |
+
+Rules for the file:
+
+- **Section headers** can be written `endo`, `endogenous` or `endogenous variables`
+  (likewise `exo`, `coeff`, `coefficients`), with or without a colon.
+- **Variable lists** are comma-separated, on one line or several.
+- **Blank lines** and separator lines such as `##########` are ignored.
+- **Names** start with a letter and contain only letters, digits and
+  underscores: `gdp`, `pk_sgzx`, `rho_w_u`. Everything is converted to lower
+  case, so `GDP` and `gdp` are the same variable.
+- **One equation per line.**
+- The model must be **square**: as many equations as endogenous variables.
+- A declared variable that no equation uses is dropped, with a message.
+
+Exogenous variables and coefficients are treated the same way by the solver:
+both are columns of your data that it reads and never changes. The split only
+helps you, and `add_coeffs()`, keep track of which is which.
+
+To see a complete example file: `model_source_example()`.
+
+## 2. Writing an equation
+
+An equation is `left-hand side = right-hand side`, with exactly one `=`. You
+can give it a name in front, followed by a colon:
+
+```
+y = ch + i + g
+demand : y = ch + i + g
+```
+
+Names show up in error messages and in `calibration_check()`, so naming the
+equations you are likely to debug pays off.
+
+**Equations don't have to be solved for a variable.** thortwo rewrites every
+equation as `lhs - (rhs) = 0` and finds the values that make all of them zero
+at once, so any of these is fine:
+
+```
+log(y) = a + b * log(x)
+pk * f_k = (1 - rdep) * lag(pk, 1) * lag(f_k, 1) + pi * i
+y = ch + i + g
+```
+
+The one requirement: every endogenous variable must appear **in the current
+period** in at least one equation. A variable that only ever appears lagged
+can't be solved for.
+
+**Numbers** are written as usual: `0.6`, `2`, `1e-3`, `2.5E2`.
+
+**Operators:** `+ - * / ^` and parentheses.
+
+**Characters that are not allowed** anywhere in an equation: `@ $ % # ~ | ;`.
+EViews `@elem(...)` and similar must be translated before they reach thortwo
+(`prg_to_thor()` does this).
+
+### Explicit and implicit equations
+
+An equation written `x = f(...)`, with the variable it determines alone on the
+left and absent from the right, is *explicit*. The others, such as
+`log(y) = ...` or `pk * f_k = ...`, are *implicit*.
+
+For the default solver the difference doesn't matter. It matters with the
+advanced option `thor_model(sequential = TRUE)`, which solves the prologue and
+the epilogue one equation at a time: an explicit equation is then simply
+evaluated, while an implicit one needs a small Newton iteration of its own.
+Both give the same result; explicit ones are cheaper and can't fail to
+converge. See [Building and solving a model](getting-started.qmd).
+
+## 3. Time: lags and differences
+
+### `lag(x, n)`: the value of `x`, `n` periods earlier
+
+```
+ch = 0.6 * lag(y, 1)
+```
+
+- `n` counts periods **backwards**. The sign is ignored: `lag(y, 1)` and
+  `lag(y, -1)` both mean the previous period. **There are no leads**: thortwo
+  solves period by period and can't look forward.
+- **Only a single variable can be lagged.** Lag each variable separately
+  instead of lagging an expression:
+
+| write this | not this |
+|---|---|
+| `log(lag(x, 1))` | `lag(log(x), 1)` |
+| `lag(x, 1) * lag(z, 1)` | `lag(x * z, 1)` |
+
+  The second column is rejected when the model is built ("Parser error on the
+  lags and/or deltas").
+
+- `mylg(x, n)` is accepted as a synonym, for older model files.
+
+### `delta(n, expr)`: the change over `n` periods
+
+`delta(n, expr)` means `expr - (expr, n periods earlier)`. Unlike `lag`, it
+works on whole expressions, including ones that already contain lags:
+
+```
+delta(1, log(w)) = 0.5 * delta(1, log(p)) - 0.3 * (u - u_star)
+delta(1, log(lag(x, 1)))        # log x(t-1) - log x(t-2)
+```
+
+`newdiff(n, expr)` is a synonym. In EViews terms, `d(x)` is `delta(1, x)`.
+
+### Lags given by a variable
+
+The lag can be a variable instead of a number, as Opale does with its
+seasonal index: `lag(x, trim)`. The value of `trim` **in the current period**
+is read from the data and rounded to a whole number of periods.
+
+### How much history the data needs
+
+Before the first period you solve, the data must hold as many complete periods
+as the deepest lag in the model. For instance, `delta(1, log(lag(x, 1)))` reads
+`x` two periods back. thortwo works this out when you build the model, and if
+you start too early it tells you which period is the earliest possible. A lag
+given by a variable can't be known in advance, so for those you have to
+leave enough history yourself.
+
+## 4. Supported functions
+
+| function | meaning |
+|---|---|
+| `log(x)`, `log(x, base)` | natural log, or log in another base |
+| `log2(x)`, `log10(x)`, `logb(x, base)` | logs in base 2, 10, or any base |
+| `log1p(x)`, `expm1(x)` | `log(1+x)` and `exp(x)-1`, accurate near 0 |
+| `exp(x)` | exponential |
+| `sqrt(x)` | square root; `x^0.5` is the same |
+| `abs(x)`, `sign(x)` | absolute value; sign (-1, 0 or 1) |
+| `sin cos tan asin acos atan` | trigonometric functions |
+| `sinh cosh tanh asinh acosh atanh` | hyperbolic functions |
+| `lag(x, n)`, `delta(n, x)` | see section 3 |
+
+The same list is available in R as `thor_functions_supported`.
+
+**Anything else is rejected** when the model is built, with "Function '…' is
+not supported". This includes `max`, `min`, `ifelse`, `pnorm` and comparisons
+such as `x > 0`. For the usual workaround, see the next section.
+
+## 5. Conditional equations
+
+thortwo has no `if`. Conditions in ThreeME come in two kinds, and both are
+dealt with before the model reaches thortwo.
+
+**Conditions in the `.mdl` files are applied once, when the model is
+compiled.** For example:
+
+```
+d(log(F_n[f, s])) = ...      if F_n[f, s] <> 0
+```
+
+The ThreeME compiler (`dynamo`) checks the condition against the calibration
+data and simply doesn't generate the equation for the sectors where it fails.
+thortwo never sees the condition, only the equations that survived it. As a
+consequence, the condition can't switch on or off during a simulation.
+
+**A logical test inside an equation is evaluated every period.** EViews allows
+`(A > B)` inside an equation, worth 1 or 0. `prg_to_thor()` rewrites each
+test as a smooth indicator, with `eps = 1e-30`:
+
+```
+(A > B)   becomes   0.5 * (1 + (A - B) / (abs(A - B) + eps))
+(A < B)   becomes   0.5 * (1 - (A - B) / (abs(A - B) + eps))
+```
+
+It equals 1 or 0 as soon as `A` and `B` differ, and 0.5 when they are exactly
+equal. `>=` is treated as `>`, and `<=` as `<`.
+
+If you write a `.txt` model by hand and need a switch, write the indicator
+yourself in the same way. Keep in mind:
+
+- **Newton sees the regime as fixed.** Away from the threshold the indicator is
+  flat, so its derivative is zero. A regime change happens between iterations,
+  or between periods, not within a Newton step.
+- **A model sitting exactly on a threshold can stall.** At the crossing the
+  indicator has a kink. This is a property of putting a discontinuity into a
+  model solved by Newton, not of thortwo.
+
+## 6. Differentiation: `stats::D` and Deriv
+
+To solve with Newton's method, thortwo needs the derivative of every equation
+with respect to every endogenous variable in it (the jacobian). It computes
+these **symbolically, once, when the model is built**, and turns them into
+code. Two R tools do this.
+
+| | `stats::D` (base R) | `Deriv` package |
+|---|---|---|
+| used for | every equation it can handle | the others |
+| result | not simplified: `S^((1/2) - 1) * ((1/2) * (2 * x))` | simplified: `x / sqrt(S)` |
+| speed | fast | slow, and much slower on long equations: its cost grows roughly with the cube of the length |
+| functions it knows | arithmetic, `^`, `exp`, `log`, `log2`, `log10`, `log1p`, `expm1`, `sqrt`, trigonometric, `sinh`, `cosh`, `tanh` | everything in section 4 |
+| functions it doesn't know | `abs`, `sign`, `asinh`, `acosh`, `atanh`, `logb`, `log(x, base)` | none |
+
+**thortwo chooses for you.** Every equation is tried with `stats::D` first.
+`delta()` is handled on the way, so it is not a problem. An equation
+containing one of the functions `stats::D` doesn't know goes to Deriv instead.
+In ThreeME those are only the equations with a comparison (section 5), which
+use `abs()`: 32 of 6,791 equations at 13x13, 88 of 26,439 at 29x33.
+
+**The two give the same numbers.** Their derivatives agree to machine
+precision; one is simply tidier than the other. The tidying doesn't make the
+generated code smaller or the solve faster, because the C++ compiler does it
+anyway. What it costs is build time: computing the jacobian of ThreeME 29x33
+took 115 s when Deriv did all of it, and takes 19 s now.
+
+One equation shows why. `verif_all`, a square root of a sum of squares over
+every `verif_*` variable, took 278 s on its own with Deriv at 13x13 and would
+have taken about 55 minutes at 29x33. With `stats::D` it takes a hundredth of
+a second.
+
+### What this means when you write equations
+
+For ordinary equations, nothing: write them as you like.
+
+For a **very long equation**, with hundreds of variables, two habits keep the
+build fast:
+
+- **Avoid the functions `stats::D` doesn't know**: `abs()`, `sign()`, and
+  the comparison indicators of section 5, which use `abs()`. One of these
+  anywhere in the equation sends the whole equation to Deriv, which is where
+  long equations get expensive.
+- **Or split it.** Five partial sums stored in intermediate variables are
+  faster to build than one sum of 300 terms, whichever tool differentiates
+  them. They also produce less C++ to compile.
+
+### Points where a derivative doesn't exist
+
+Some functions have no derivative at particular points, whichever tool
+computed it: `sqrt(x)` and `x^0.5` at 0, `log(x)` at 0 and below, `abs(x)` at
+0, and the indicator of section 5 at its threshold. If your data puts an
+equation exactly at such a point, Newton may stall or fail there. If an
+equation evaluates to something that is not a number, the solve stops with an
+error; it never returns such a value as a solution.
+
+ThreeME's `verif_all` was an example: it was written as the square root of a
+sum of squares, and the calibration puts every term at exactly 0. Written as
+the plain sum of squares, it has no such point.
+
+Two more things worth knowing:
+
+- **`abs` and `sign` are treated as flat.** The derivative of `abs(x)` is
+  `sign(x)`, and the derivative of `sign(x)` is 0.
+- **A zero derivative makes a variable impossible to solve for.** An equation
+  like `pk * f_k = ...` determines `pk` only while `f_k` isn't zero. With
+  `f_k = 0` in every period, `pk` is undetermined and the solve fails with an
+  infinite Newton step. This is what happened with sector `sgzx` in ThreeME
+  13x13.
+
+## 7. Common errors when building
+
+| message | what to do |
+|---|---|
+| `Parser error on the lags and/or deltas` | a lag of an expression, such as `lag(log(x), 1)`: lag the variable instead (section 3) |
+| `Function 'max' is not supported` | use a supported function, or the indicator of section 5 |
+| `too many equal signs` / `do not have the = sign` | exactly one `=` per equation |
+| `The model must be square` | count the equations and the endogenous variables; check for a variable that only appears lagged |
+| `equations have no endogenous variable at t = 0` | an equation contains only exogenous variables or lagged terms |
+| `Variables must start with a lower-case letter` | a name starts with a digit or `_`; names must start with a letter |
+| `Invalid characters` | a name contains something other than letters, digits and `_` |
+| `Could not find the ... section header` | a section header is missing or misspelled |

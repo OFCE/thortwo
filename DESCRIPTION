@@ -1,0 +1,31 @@
+Package: thortwo
+Type: Package
+Title: Build and Solve Large Macroeconomic Models
+Version: 0.9.0
+Authors@R: c(
+    person("Anissa", "Saumtally", email = "anissa.saumtally@sciencespo.fr",
+           role = c("aut", "cre")),
+    person("Charlotte", "Nudelmann", role = "ctb"))
+Description: Parses a macroeconomic model written as a text file, decomposes it
+    into prologue, heart and epilogue blocks, differentiates it symbolically,
+    generates and compiles a model-specific C++ Newton solver, and solves the
+    model period by period against a database. Three interchangeable backends
+    are provided: a sparse Eigen solver for large models, a dense Eigen solver,
+    and a pure R solver. Compiled models are cached between sessions and saved
+    models are self-contained.
+License: file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.1)
+Imports:
+    methods,
+    stats,
+    utils,
+    tools,
+    compiler,
+    Matrix,
+    Deriv,
+    Rcpp,
+    RcppEigen,
+    assertthat,
+    stringr
+Config/roxygen2/version: 8.1.0

@@ -1,0 +1,340 @@
+---
+title: "Building and solving a model"
+subtitle: "A first script: a model file, a data frame, a solution"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+execute:
+  eval: false
+---
+
+A thortwo script always has the same three steps:
+
+1. **Build** the model from its `.txt` file: `thor_model()`.
+2. **Prepare** a data frame holding every variable of the model.
+3. **Solve** it over a range of periods: `thor_solve()`.
+
+The example below is complete: copy it into a script and run it.
+
+## The complete script
+
+The model, saved as `mini.txt` (see [Writing model equations](equations.qmd)
+for the syntax):
+
+```
+endogenous :
+ch, i, y
+
+exogenous :
+g
+
+coefficients :
+mpc, inv_share
+
+equations :
+y = ch + i + g
+consumption : ch = mpc * lag(y, 1)
+i = inv_share * y
+```
+
+The script:
+
+```{r}
+library(thortwo)
+
+## 1. Build the model
+model <- thor_model("mini", "mini.txt")
+
+## 2. The data: one row per year, one column per variable
+years <- 2015:2030
+data <- data.frame(
+  year      = years,
+  g         = 20 * 1.02^(years - 2015),   # exogenous
+  mpc       = 0.6,                        # coefficients
+  inv_share = 0.25,
+  y         = NA, ch = NA, i = NA         # endogenous: to be solved
+)
+data[data$year == 2015, c("y", "ch", "i")] <- c(100, 55, 25)   # history
+
+## 3. Solve from 2016 to 2030
+result <- thor_solve(model, from = 2016, to = 2030,
+                     data = data, index_time = "year")
+
+head(result, 3)
+#>   year      g mpc inv_share       y    ch      i
+#> 1 2015 20.000 0.6      0.25 100.000 55.00 25.000
+#> 2 2016 20.400 0.6      0.25 107.200 60.00 26.800
+#> 3 2017 20.808 0.6      0.25 113.504 64.32 28.376
+```
+
+`result` is your data frame with the endogenous variables filled in from 2016
+to 2030. Everything else is left exactly as it was.
+
+## The data frame
+
+The data frame has **one row per period** and **one column per variable**,
+plus one column for time.
+
+| | |
+|---|---|
+| **Time column** | Any name, passed to `thor_solve()` as `index_time`. Years (`2019`), dates (`as.Date("2019-01-01")`) or labels (`"2019Q1"`) all work. No duplicates, no missing values. |
+| **Row order** | **Sorted from oldest to newest, with no gaps.** A lag reads the previous *row*, so rows out of order give wrong results without any error. `time_model_checks(data, "year")` checks this. |
+| **Column names** | Every variable of the model, in **lower case**, as in the model file. Extra columns are fine and are left untouched. |
+| **Values** | Numbers. |
+
+Which cells must be filled:
+
+| variable | before the first solved period | over the solved periods |
+|---|---|---|
+| exogenous and coefficients | yes | **yes, every period** |
+| endogenous | **yes** | no: they are what is solved |
+
+- **History before the first solved period.** You need as many complete
+  periods as the deepest lag in the model. `mini` uses `lag(y, 1)`, so one
+  year is enough. thortwo prints how far back the model reaches when it is
+  built, and refuses to start too early, naming the earliest possible period.
+- **Endogenous values over the solved periods** are not needed. The solver
+  starts each period from the previous period's solution, so it ignores
+  whatever is there, `NA` included.
+- **Coefficients** are ordinary columns, normally constant. If they come as a
+  separate table of names and values, `add_coeffs()` adds them to the data:
+
+  ```{r}
+  coeffs <- data.frame(name = c("mpc", "inv_share"), value = c(0.6, 0.25))
+  data <- add_coeffs(coeffs, data, pos.coeff.name = 1, pos.coeff.value = 2)
+  ```
+
+- `data_model_checks(model, data)` checks that every model variable is
+  present.
+
+## Building: `thor_model()`
+
+```{r}
+model <- thor_model("mini", "mini.txt")
+```
+
+That is all most scripts need. All the options:
+
+| argument | default | what it does |
+|---|---|---|
+| `name` | (required) | A name for the model. It is also the name of the folder where its C++ code is kept, so use a different name for each model. |
+| `source` | | Path to the `.txt` model file. |
+| `backend` | `"sparse"` | How the model is solved: `"sparse"` (compiled), `"sparse-r"` (pure R, no compiler needed) or `"dense-cpp"`. See [Choosing a backend](backends.qmd). `"sparse"` is the right choice for normal work; `"sparse-r"` for a quick one-off run or a computer without a C++ compiler. |
+| `decompose` | `TRUE` | Split the model into prologue, heart and epilogue blocks, which makes solving faster. `FALSE` solves it as one block, mostly useful for debugging. |
+| `sequential` | `FALSE` | Advanced. `TRUE` solves the prologue and the epilogue one equation at a time instead of by Newton. See [below](#advanced-sequential-prologue-and-epilogue). |
+| `compile` | `TRUE` | Compile straight away, so the model is ready to solve. With `FALSE`, compilation happens on the first `thor_solve()`. |
+| `cache` | `NULL` | Where built and compiled models are kept between sessions. `NULL` uses the default cache; `FALSE` turns it off. |
+| `recompile` | `FALSE` | `TRUE` builds and compiles from scratch even if this model is in the cache. |
+| `workdir` | `NULL` | Where the generated code is written. Leave it alone: the default is what lets the cache recognise a model it has already compiled. |
+| `verbose` | `TRUE` | Print progress. |
+
+Instead of a file, the model can be given as vectors, through `endogenous`,
+`exogenous`, `coefficients` and `equations`.
+
+### Built models are cached
+
+Building a large model takes time. So every model you build is stored, and
+when you call `thor_model()` again on a model that has not changed, in the
+same R session or weeks later, it is loaded instead of being rebuilt:
+
+```
+This version of the model has already been compiled before; using the existing cache.
+To recompile, use recompile = TRUE and rerun the build.
+```
+
+On ThreeME 13x13 that takes half a second instead of about a minute.
+
+- **What counts as "the same model":** the same name, variables, equations,
+  `backend` and `decompose`, built with the same version of thortwo and of R.
+  Change an equation, even one number in it, and the model is built again.
+  Spacing, upper or lower case, and the name or date of the file don't
+  matter.
+- **To force a fresh build:** `thor_model(..., recompile = TRUE)`.
+- **To switch the lookup off:** `cache = FALSE` for one call, or
+  `options(thortwo.model.cache = FALSE)` for the session.
+- **To empty the cache:** `clear_model_cache()`. It lives in a per-user
+  folder, shown by `thor_cache_dir()`, and takes about 1 MB per model plus the
+  compiled code.
+
+### Advanced: sequential prologue and epilogue
+
+```{r}
+model <- thor_model("mymodel", "mymodel.txt", sequential = TRUE)
+```
+
+The decomposition splits a model into three blocks. The prologue and the
+epilogue are *recursive*: taken in the right order, each of their equations
+has only one variable that is not yet known. By default thortwo still solves
+them like the heart, as a system, with Newton's method. With
+`sequential = TRUE` it solves them one equation at a time, in that order:
+
+- an equation written `x = f(...)`, where `x` is the variable it determines
+  and doesn't appear on the right, is simply **evaluated**;
+- any other equation (`log(y) = ...`, `pk * f_k = ...`) is solved for its one
+  unknown with a **one-variable Newton** iteration.
+
+The heart is still solved by Newton. `thor_solve()` is called exactly as
+before, and printing the model shows what was done:
+
+```
+  prologue    792 equations   sequential: 750 direct, 42 by one-variable Newton
+  heart      4663 equations   jacobian 16513 non-zero (0.08% dense)
+  epilogue   1336 equations   sequential: 1087 direct, 249 by one-variable Newton
+```
+
+**What it changes.** The solution is the same as Newton's, to within the
+solver's tolerance. Measured on the `"sparse"` backend:
+
+| | normal | sequential |
+|---|---|---|
+| ThreeME 4x4: build in R / compile / solve | 6.4 s / 7.5 s / 0.15 s | 7.2 s / 8.3 s / 0.14 s |
+| ThreeME 13x13: build in R / compile / solve | 29 s / 18 s / 3.8 s | 26 s / 17 s / 4.1 s |
+| Opale: solve | 0.011 s | 0.003 s |
+
+So on these models the effect on time is **small**, in either direction. No
+jacobian is derived or compiled for the two blocks, but their equations are
+written out a second time in assignment form, and the two roughly cancel. The
+pure-R backend gains a little more (13x13 solve: 19 s to 16 s).
+
+Where it does help:
+
+- **Clearer errors.** When a variable can't be determined, the message names
+  the equation and the variable instead of reporting that a whole block did
+  not converge:
+
+  ```
+  Sequential solve failed on block 'prologue' at row 3: equation 'eq_2528' could
+  not be solved for 'pk_sgzx'. Its derivative with respect to that variable is
+  zero or not finite, or it did not converge in 100 iterations.
+  ```
+
+- **Probably, models whose prologue or epilogue is large compared with the
+  heart.** These blocks are then no longer solved as systems. This has not
+  been measured on such a model.
+
+It is off by default, and with it off nothing changes. It has no effect with
+`decompose = FALSE`.
+
+## Solving: `thor_solve()`
+
+```{r}
+result <- thor_solve(model, from = 2016, to = 2030,
+                     data = data, index_time = "year")
+```
+
+| argument | default | what it does |
+|---|---|---|
+| `model` | (required) | The model from `thor_model()`. |
+| `from`, `to` | (required) | First and last period to solve, as they appear in the time column. |
+| `data` | (required) | The data frame. |
+| `index_time` | `"date"` | Name of the time column. |
+| `rtol` | `1e-10` | How precisely each variable is solved, relative to its size. |
+| `atol` | `1e-8` | The same, for variables at or near zero. |
+| `max_iter` | `100` | Maximum Newton iterations per block and period before giving up. |
+| `damping` | `TRUE` | Shorten a Newton step that would make things worse. Leave it on. |
+| `reuse_jacobian` | on, except on `"sparse-r"` | Reuse the factorised jacobian within a period, which makes large models solve about three times faster. `FALSE` gives plain Newton. See [below](#reusing-the-jacobian). |
+| `verbose` | `TRUE` | Print progress. |
+| `diagnostics` | `FALSE` | Attach per-period details to the result (below). |
+
+The solver works period by period. Within a period it solves the prologue, then
+the heart, then the epilogue, each with Newton's method, starting from the
+previous period's values.
+
+With `diagnostics = TRUE`, the result carries:
+
+```{r}
+attr(result, "iterations")    # Newton iterations, per period
+attr(result, "residuals")     # largest equation error, per period
+attr(result, "convergence")   # worst scaled step, per period (below 1 = converged)
+attr(result, "elapsed")       # solve time in seconds
+```
+
+### Reusing the jacobian
+
+At every Newton iteration the solver has to prepare the model's table of
+derivatives (the jacobian) before it can compute a step. This preparation,
+the *factorisation*, is by far the most expensive part of an iteration on a
+large model: 1.4 seconds on ThreeME 29x33, against a few milliseconds for
+everything else.
+
+So by default the solver factorises once per period and reuses the result for
+that period's other iterations. A step computed with a slightly out-of-date
+factorisation is a little less accurate, so more steps are needed, but each
+one costs almost nothing. If such a step fails to reduce the error, it is
+discarded and redone the ordinary way, so the worst case is plain Newton.
+
+| `"sparse"` backend | plain Newton | reusing (default) |
+|---|---|---|
+| ThreeME 13x13, 38 years | 3.8 s, 456 iterations | **1.2 s**, 996 iterations |
+| ThreeME 29x33, 38 years | 208 s, 456 iterations | **74 s**, 1,009 iterations |
+| Opale, 40 quarters | 0.011 s | 0.009 s |
+
+The solution is the same: on these models it differs from plain Newton's by
+less than `1e-10`, and the equations are satisfied just as closely.
+
+- **The number of iterations reported is about twice what plain Newton
+  takes.** That is expected: more steps, each much cheaper.
+- **It is off by default on the `"sparse-r"` backend.** There, evaluating the
+  equations in R is the main cost, and more iterations means more of it.
+- To get plain Newton, for instance to compare iteration counts with an
+  earlier run:
+
+  ```{r}
+  result <- thor_solve(model, from, to, data = data, index_time = "year",
+                       reuse_jacobian = FALSE)
+  ```
+
+## Checking the result
+
+A converged solve means Newton stopped moving. To check that the equations
+actually hold:
+
+```{r}
+model_residuals(model, result, periods = 2016:2030, index_time = "year")
+#>          prologue heart
+#> 2016 2.220446e-15     0
+#> 2017 2.380318e-15     0
+```
+
+This gives the largest equation error per block and period. Values like
+`2e-15` are rounding; anything around `1e-8` or below is fine. Add `by = "equation"` to see every equation.
+
+`calibration_check()` lists the equations that a data frame doesn't satisfy in
+one period. It is most useful **before** solving, on a calibrated baseline,
+to find equations the calibration misses; that is the first thing to run when
+a solve fails. The period needs the same history as a solve does.
+
+```{r}
+calibration_check(model, result, period = 2017, index_time = "year")
+#> [1] equation part     formula  residual
+#> <0 rows> (or 0-length row.names)
+```
+
+No rows means every equation holds to within `1e-6`.
+
+## Saving and reloading a model
+
+```{r}
+thor_save(model, "mini.rds")
+
+## later, in another session or on another computer
+model <- thor_load("mini.rds")
+```
+
+The saved file contains everything: the equations and the generated code. It
+doesn't need the original `.txt` file, and on the same computer it reloads from
+the cache without compiling again.
+
+## When something goes wrong
+
+| symptom | where to look |
+|---|---|
+| Building stops with an error about an equation | [Writing model equations](equations.qmd), section 7 |
+| `Missing variables in the database: …` | a column is missing or not in lower case |
+| `The first period to solve is … but this model reaches … back` | start later, or add history to the data |
+| `… missing over the solved period: …` | an exogenous variable or coefficient has an `NA` |
+| `Newton did not converge on block …` | run `calibration_check()` on that period to find the equations your data misses |
+| `Sequential solve failed … equation '…' could not be solved for '…'` | with `sequential = TRUE`: that equation doesn't determine that variable at that period, typically because something multiplying it is zero in the data |
+| Compiler errors mentioning `math.h` or `cstdint` | your computer's C++ setup: run `thor_check_toolchain()` |

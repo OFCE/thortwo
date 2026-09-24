@@ -1,0 +1,14 @@
+endo :
+endovar1,endovar2,endovar3,endovar4
+######Anything on this line will no be read######
+exo :
+exovar1,exovar2,exovar3,exovar4,exovar5
+######Anything on this line will no be read######
+coeff :
+cf1,cf2,cf3
+######Anything on this line will no be read######
+equations:
+delta(1,log(endovar1)) = endovar2 + lag(endovar3,1) +exovar1
+delta(1,log(endovar2)) = cf3*endovar4 + cf1*lag(endovar2,1) +exovar2
+equation_var3 : delta(1,log(endovar3)) = exovar4/exovar5 + cf2 * delta(1,log(lag(endovar3,2)))
+equilibrium : endovar4 = endovar1 + endovar2 +endovar3
