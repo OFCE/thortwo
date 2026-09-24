@@ -1,0 +1,11 @@
+.gitignore
+^.*\.Rproj$
+^\.DS_Store$
+^\.Rhistory$
+^\.Rproj\.user$
+^README\.md$
+^tests$
+^THORTWO_BUILD_SPEC\.md$
+misc/
+tests/
+THORTWO_BUILD_SPEC.md
