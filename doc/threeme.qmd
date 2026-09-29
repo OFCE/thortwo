@@ -1,0 +1,454 @@
+---
+title: "Solving ThreeME with thortwo"
+subtitle: "Building a model from a text file, solving it, and reloading it later"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    df-print: kable
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| include: false
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", dev = "png", dpi = 160)
+```
+
+```{r libraries}
+#| message: false
+library(thortwo)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+```
+
+::: {.callout-note collapse="true"}
+## A note on dependencies
+
+`thortwo` itself depends on no part of the tidyverse — deliberately, since the
+solver has no use for it. `dplyr`, `tidyr`, `purrr` and `ggplot2` are used *in this
+document* to handle and show results, which is how you would work with them in
+practice.
+:::
+
+## What we are doing
+
+Two workflows, end to end:
+
+1. **Build and solve.** Read a ThreeME model from its `.txt` file, build it,
+   load the data, solve it over a projection horizon, and check the answer.
+2. **Reload.** Save the built model, and pick it up again in a later session
+   without paying for the build a second time.
+
+ThreeME at the 4x4 classification is 1729 equations. Everything below runs in
+well under a minute on a laptop.
+
+```{r files}
+model_file <- system.file("ThreeME", "threeme_4x4_thor.txt", package = "thortwo")
+data_file  <- system.file("ThreeME", "data3me_4x4.rds",      package = "thortwo")
+
+c(model = basename(model_file), data = basename(data_file))
+```
+
+## 1. The model file
+
+A model file is four sections: the endogenous variables, the exogenous
+variables, the coefficients, and the equations. Section headers are what
+identify them, so blank lines and separator banners are free — you cannot
+break the file by adding a line in the wrong place.
+
+```{r peek-file}
+writeLines(substr(head(readLines(model_file), 11), 1, 78))
+```
+
+You can read those sections without building anything, which is the quickest
+way to check that a file is well formed:
+
+```{r read-source}
+parts <- read_model_source(model_file)
+
+tibble(
+  section = names(parts),
+  n       = lengths(parts)
+)
+```
+
+An equation is written in the obvious way, optionally with a name in front of
+a colon. `lag(x, n)` and `delta(n, x)` are understood, along with the usual
+mathematical functions:
+
+```{r peek-equations}
+writeLines(substr(parts$equations[1:4], 1, 78))
+```
+
+## 2. Building the model
+
+`thor_model()` does the whole pipeline: check, decompose into blocks,
+differentiate symbolically, generate a solver, compile it.
+
+```{r build}
+#| cache: false
+t_build <- system.time(
+  m <- thor_model("threeme4x4", model_file, backend = "sparse", verbose = FALSE)
+)
+
+m
+```
+
+```{r build-time}
+cat("built in", round(t_build[["elapsed"]], 1), "s\n")
+```
+
+### What the decomposition bought
+
+The model is split into three blocks that are solved in sequence rather than
+all at once. Newton's cost is cubic in block size, so this matters a great
+deal: only the *heart* is a genuinely simultaneous system.
+
+```{r blocks}
+tibble(
+  block            = names(m@blocks),
+  equations        = map_int(m@blocks,   ~ length(.x$equations)),
+  jacobian_entries = map_int(m@jacobian, ~ length(.x$i))
+) |>
+  mutate(pct_dense = round(100 * jacobian_entries / equations^2, 3))
+```
+
+Around a third of one percent of the heart's jacobian is non-zero — 4160
+entries in a 1107 x 1107 matrix. That is the whole argument for the `sparse`
+backend: the dense representation would allocate and factorise all 1.2 million
+cells on every Newton iteration to carry those 4160.
+
+### Choosing a backend
+
+`backend` is stored on the model, and `thor_solve()` dispatches on it, so
+there is only ever one way to solve.
+
+| backend | jacobian | needs a compiler | use it when |
+|---|---|---|---|
+| `"sparse"` | triplets, Eigen `SparseLU` | yes | the default; the only option at this size |
+| `"dense-cpp"` | dense, Eigen `PartialPivLU` | yes | small models |
+| `"dense-r"` | dense, base `solve()` | no | no toolchain available |
+
+All three produce the same answer — on Opale they agree to a median relative
+difference of about 1e-15 — but on ThreeME 4x4 the sparse solver is roughly
+30x faster than the dense one, and at 8x8 it is 70x.
+
+## 3. The data
+
+One row per period, one column per variable, plus a column to use as the time
+index.
+
+```{r data}
+data_3me <- readRDS(data_file)
+
+cat(nrow(data_3me), "periods x", ncol(data_3me), "columns\n")
+cat("years", min(data_3me$year), "to", max(data_3me$year), "\n")
+
+data_3me |> select(1:5) |> slice_head(n = 4)
+```
+
+Before solving, it is worth asking whether the database actually holds
+everything the model needs:
+
+```{r data-checks}
+data_model_checks(m, data_3me, quiet = FALSE)
+```
+
+If your coefficients live outside the database — as they do for Opale, in a
+separate two-column table — `add_coeffs()` broadcasts them on as constant
+columns first. ThreeME carries its own, so nothing to do here.
+
+## 4. Solving
+
+`thor_solve()` runs Newton per block, per period, starting each period from
+the previous one.
+
+Two things to know about the period bounds. The first solved period cannot be
+the first row of the data: the solver needs a complete previous observation to
+initialise from and to supply the lagged terms. And every exogenous variable
+and coefficient must be present over the whole span — if one is missing,
+you get told which, rather than a convergence failure twenty periods later.
+
+```{r solve}
+res <- thor_solve(m, from = 2016, to = 2050,
+                  data = data_3me, index_time = "year",
+                  verbose = FALSE, diagnostics = TRUE)
+```
+
+`diagnostics = TRUE` attaches the per-period record:
+
+```{r diagnostics}
+tibble(
+  year        = as.integer(names(attr(res, "iterations"))),
+  iterations  = as.integer(attr(res, "iterations")),
+  scaled_step = signif(attr(res, "convergence"), 3),
+  residual    = signif(attr(res, "residuals"), 3)
+) |>
+  slice_head(n = 8)
+```
+
+```{r solve-summary}
+cat("solved", length(attr(res, "iterations")), "periods in",
+    round(attr(res, "elapsed"), 3), "s\n")
+cat("total Newton iterations:", sum(attr(res, "iterations")), "\n")
+cat("worst scaled step:", signif(max(attr(res, "convergence")), 3),
+    "(converges at 1)\n")
+```
+
+The scaled step is a mixed criterion — a variable has converged when
+`|dx| <= rtol*|x| + atol` — reported normalised, so anything at or below 1 has
+converged. It is written that way because macro models mix variables of wildly
+different magnitude, and a great many of them sit at exactly zero in a given
+scenario.
+
+### Checking the answer
+
+Convergence is not the same as correctness. Newton will happily converge on
+whatever equations it was given; only the residuals notice if those are not
+the equations in your file. `model_residuals()` re-evaluates every equation at
+the solution:
+
+```{r residuals}
+resid <- model_residuals(m, res, periods = 2016:2050, index_time = "year")
+
+round(apply(resid, 2, max), 12)
+```
+
+```{r residuals-check}
+stopifnot(max(resid) < 1e-6)
+cat("max |residual| over all blocks and periods:", signif(max(resid), 3), "\n")
+```
+
+Make this check a habit. It is the one that catches code-generation bugs, and
+it costs milliseconds.
+
+### Looking at the result
+
+`res` is the input data frame with the endogenous variables filled in over the
+solved span; everything else is untouched.
+
+```{r results}
+vars <- c("gdp", "pgdp", "unr", "ems_co2")
+
+res |>
+  filter(year %in% seq(2016, 2050, by = 5)) |>
+  select(year, all_of(vars))
+```
+
+## 5. Running a scenario
+
+The usual reason to solve a model twice: change an exogenous input and compare.
+A scenario is an ordinary edit to the data frame — there is no separate shock
+machinery to learn. Here we raise the rate of social contributions by 10% from
+2025 on.
+
+```{r scenario}
+shock_var <- "rinc_soc_tax"
+
+## It has to be exogenous: solving would simply overwrite an endogenous one.
+stopifnot(shock_var %in% m@vars$exo)
+
+## Flat across the baseline, so the shock below is a clean level change.
+## (`unique()` would report 31 values here: they differ only in the last bit.)
+summary(data_3me[[shock_var]])
+```
+
+```{r scenario-solve}
+data_shock <- data_3me
+rows <- data_shock$year >= 2025
+data_shock[rows, shock_var] <- data_shock[rows, shock_var] * 1.10
+
+res_shock <- thor_solve(m, 2016, 2050, data_shock, "year", verbose = FALSE)
+```
+
+Both runs used the same model object, so the comparison is like for like —
+only the input changed.
+
+```{r scenario-compare}
+reported <- c(gdp = "GDP", unr = "Unemployment rate", ems_co2 = "CO2 emissions")
+
+compare <- bind_rows(
+    baseline = res      |> select(year, all_of(names(reported))),
+    scenario = res_shock |> select(year, all_of(names(reported))),
+    .id = "run"
+  ) |>
+  pivot_longer(all_of(names(reported)), names_to = "variable", values_to = "value") |>
+  pivot_wider(names_from = run, values_from = value) |>
+  mutate(
+    pct_diff = 100 * (scenario / baseline - 1),
+    variable = factor(reported[variable], levels = unname(reported))
+  ) |>
+  ## Only the solved window is meaningful: outside it the two runs hold the
+  ## same untouched data, so the difference is identically zero.
+  filter(year >= 2016, year <= 2050)
+
+compare |>
+  filter(year %in% seq(2025, 2050, by = 5)) |>
+  select(year, variable, pct_diff) |>
+  pivot_wider(names_from = variable, values_from = pct_diff) |>
+  mutate(across(-year, \(x) round(x, 3)))
+```
+
+Read as percentage deviations from baseline. The table is the accessible view
+of the chart below — every plotted value is here.
+
+All three series are in the same unit — percent deviation from baseline — so
+they belong on one axis. (Two measures of *different* scale would need two
+charts, or indexing to a common base; never a second y-axis.)
+
+One caveat on reading it: the unemployment rate is itself a rate, so its
+deviation is relative — it rises from about 10.4% to 11.3% at the peak, which is
++9% relative but under one percentage point.
+
+```{r scenario-plot}
+#| fig-width: 8
+#| fig-height: 4.5
+#| fig-alt: "Line chart of percentage deviation from baseline for GDP, the unemployment rate and CO2 emissions, 2016 to 2050, under a 10 percent higher rate of social contributions from 2025. All three move away from zero after the 2025 shock and the lines are directly labelled at the right."
+## Categorical palette slots 1-3, validated for colour-vision deficiency
+## separation against the light chart surface.
+series_colours <- c("GDP"               = "#2a78d6",
+                    "Unemployment rate" = "#eb6834",
+                    "CO2 emissions"     = "#1baf7a")
+
+ends <- compare |> filter(year == max(year))
+
+ggplot(compare, aes(year, pct_diff, colour = variable)) +
+  geom_hline(yintercept = 0, linewidth = 0.4, colour = "#b5b3ad") +
+  geom_vline(xintercept = 2025, linewidth = 0.4, linetype = "dotted",
+             colour = "#b5b3ad") +
+  geom_line(linewidth = 0.8) +
+  ## Direct labels as well as the legend, so identity is never colour alone.
+  ## The label text wears ink rather than the series colour: the line it sits
+  ## against carries the identity, and coloured text would be the harder read.
+  geom_text(data = ends, aes(label = variable), hjust = 0, nudge_x = 0.6,
+            size = 3.2, colour = "#0b0b0b", show.legend = FALSE) +
+  annotate("text", x = 2025, y = Inf, label = "shock", vjust = 1.4, hjust = -0.15,
+           size = 3, colour = "#52514e") +
+  scale_colour_manual(values = series_colours, name = NULL) +
+  scale_x_continuous(limits = c(2016, 2064), breaks = seq(2020, 2050, 10)) +
+  scale_y_continuous(labels = scales::label_number(suffix = "%")) +
+  labs(title = "A 10% higher rate of social contributions from 2025",
+       subtitle = "Deviation from baseline, ThreeME 4x4",
+       x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.background   = element_rect(fill = "#fcfcfb", colour = NA),
+    panel.background  = element_rect(fill = "#fcfcfb", colour = NA),
+    panel.grid.minor  = element_blank(),
+    panel.grid.major  = element_line(colour = "#e8e7e1", linewidth = 0.3),
+    plot.title        = element_text(size = 11.5, colour = "#0b0b0b"),
+    plot.subtitle     = element_text(size = 9.5,  colour = "#52514e"),
+    axis.text         = element_text(colour = "#52514e"),
+    legend.position   = "top",
+    legend.justification = "left",
+    legend.text       = element_text(colour = "#52514e")
+  )
+```
+
+## 6. Saving and reloading a model
+
+Building costs seconds to minutes. Solving costs milliseconds. So you build
+once and reload after that.
+
+A saved model is **self-contained**: the `.rds` carries the generated solver
+source inside it, not a path to it. You can copy the file to another machine,
+commit it, or come back to it after a reboot has cleared `/tmp`, and it will
+still work.
+
+```{r save}
+store <- file.path(tempdir(), "threeme4x4.rds")   # somewhere durable, in practice
+thor_save(m, store)
+
+cat("saved", round(file.size(store) / 1024^2, 1), "MB\n")
+```
+
+### In a later session
+
+```{r load}
+t_load <- system.time(
+  m2 <- thor_load(store)
+)
+
+m2
+cat("loaded and ready in", round(t_load[["elapsed"]], 2), "s\n")
+```
+
+That is the whole reload workflow — there is no separate "recompile" step to
+remember. `thor_load()` writes the stored source out and compiles it, which
+hits the compile cache whenever the code has not changed, so in practice it
+costs a fraction of a second. A model built here and a model loaded from disk
+are the same object:
+
+```{r load-verify}
+res2 <- thor_solve(m2, 2016, 2050, data_3me, "year", verbose = FALSE)
+
+identical(res[, m@vars$endo], res2[, m2@vars$endo])
+```
+
+### The compile cache
+
+The cache is what makes the above cheap, and it is on by default. Generated
+source goes to a stable, model-derived location, so rebuilding a model whose
+equations have not changed does no compilation at all.
+
+```{r cache}
+thor_cache_dir()
+```
+
+```r
+options(thortwo.cache.dir = "~/my-cache")   # move it
+options(thortwo.cache.dir = FALSE)          # turn it off
+clear_model_cache()                         # empty it
+thor_model(..., cache = FALSE)              # or just for this build
+```
+
+If you edit the model file, the generated code changes, the hash changes, and
+the next build recompiles by itself. You never have to remember to invalidate
+anything.
+
+## 7. Where to go wrong
+
+A few failure modes worth recognising:
+
+**"The first period cannot be the first observation."** The solver initialises
+from the previous row. Start at the second row or later.
+
+**"Exogenous variables or coefficients are missing over the solved period."**
+Exactly what it says, with the names listed. Extend your exogenous paths to
+cover the whole horizon.
+
+**"Newton did not converge on block 'heart' at row N."** The message reports
+the scaled step actually reached, the tolerance, and the worst residual. In
+order of likelihood: bad data at that period, an over-tight `rtol`, or a model
+that genuinely has no solution there. Try `max_iter = 200`, or look at the
+data for that year first.
+
+**Converged, but the residuals are large.** That is a code-generation problem,
+not a numerical one. Report it — and it is why section 4 checks.
+
+## Summary
+
+```r
+library(thortwo)
+
+# once
+m <- thor_model("mymodel", "mymodel.txt")
+thor_save(m, "mymodel.rds")
+
+# every time after that
+m   <- thor_load("mymodel.rds")
+res <- thor_solve(m, from = 2016, to = 2050, data = mydata, index_time = "year")
+stopifnot(max(model_residuals(m, res, 2016:2050, "year")) < 1e-6)
+```
+
+```{r session}
+#| echo: false
+cat("thortwo", as.character(packageVersion("thortwo")),
+    "on", R.version.string, "\n")
+```

@@ -3,6 +3,7 @@
 ^\.DS_Store$
 ^\.Rhistory$
 ^\.Rproj\.user$
+^doc$
 ^README\.md$
 ^tests$
 ^THORTWO_BUILD_SPEC\.md$

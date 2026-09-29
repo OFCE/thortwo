@@ -14,14 +14,19 @@
 source("tests/helper.R")
 
 args <- commandArgs(trailingOnly = TRUE)
-classification <- if (is.na(args[1])) "4x4" else args[1]
+classification <- if (is.na(args[1])) "8x8" else args[1]
 stopifnot(classification %in% c("4x4", "8x8"))
 
 which_backends <- if (is.na(args[2]) || args[2] == "all") c("sparse", "dense-cpp") else args[2]
 
-model_file <- file.path("tests", paste0("threeme_", classification, "_thor.txt"))
-data_file  <- file.path("tests", paste0("data3me_", classification, ".rds"))
-stopifnot(file.exists(model_file), file.exists(data_file))
+## 4x4 ships with the package (it is what the worked example in
+## doc/threeme.qmd uses); 8x8 is a stress fixture and stays in tests/.
+find_fixture <- function(f) {
+  for (d in c("inst/ThreeME", "tests")) if (file.exists(file.path(d, f))) return(file.path(d, f))
+  stop("Fixture not found: ", f, call. = FALSE)
+}
+model_file <- find_fixture(paste0("threeme_", classification, "_thor.txt"))
+data_file  <- find_fixture(paste0("data3me_", classification, ".rds"))
 
 work <- new_tmpdir("thortwo_threeme_")
 on.exit(unlink(work, recursive = TRUE), add = TRUE)
@@ -34,6 +39,7 @@ rows <- match(as.character(periods), as.character(data_3me$year))
 
 solutions <- list()
 
+which_backends <- "sparse"
 for (backend in which_backends) {
 
   cat("\n=== ", classification, " / ", backend, " ===\n", sep = "")

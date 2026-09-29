@@ -19,7 +19,7 @@ build <- function(f, ...) {
              verbose = FALSE, ...)
 }
 
-for (f in c("inst/models/opale.txt", "tests/threeme_4x4_thor.txt")) {
+for (f in c("inst/models/opale.txt", "inst/ThreeME/threeme_4x4_thor.txt")) {
 
   cat("\n=== ", basename(f), " ===\n", sep = "")
 
