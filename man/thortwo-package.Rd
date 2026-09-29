@@ -19,7 +19,8 @@ The whole package is four functions:
 * [thor_save()] / [thor_load()] move a built model between sessions and
   machines, generated source and all.
 * [model_residuals()] checks that a solution really does satisfy the
-  equations.
+  equations, per block or per equation; [calibration_check()] names the
+  equations a dataset fails at a given period.
 }
 \author{
 \strong{Maintainer}: Anissa Saumtally \email{anissa.saumtally@sciencespo.fr}

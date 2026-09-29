@@ -182,3 +182,76 @@ get_variables_from_string <- function(string) {
   out <- unique(strsplit(x, ",", fixed = TRUE)[[1L]])
   out[nzchar(out)]
 }
+
+#' How far back in time a formula reaches
+#'
+#' The solver needs `max_lag` complete observations before the first solved
+#' period: a formula like `delta(1, log(lag(x, 1)))` reads `x` at t-2, and
+#' reading past the start of the data yields NA, which reaches the solver as a
+#' non-finite residual rather than as an error anyone can act on.
+#'
+#' Walks the same encoding the code generators do: `lag.<var>.<k>` symbols,
+#' `lag()`/`mylg()` calls and `delta()`/`newdiff()` shifts, accumulated through
+#' nesting. A lag whose amount is a *variable* (Opale's `trim`) cannot be known
+#' before the data is in hand, so it contributes nothing here and is reported
+#' separately.
+#'
+#' @param text a formula in `new_formula` syntax
+#' @return list(k, variable): the largest constant lag, and whether a
+#'   variable lag amount was seen
+#' @keywords internal
+formula_max_lag <- function(text) {
+
+  seen_variable <- FALSE
+
+  walk <- function(e, k) {
+    if (is.numeric(e)) return(k)
+
+    if (is.symbol(e)) {
+      nm <- as.character(e)
+      if (!startsWith(nm, "lag.")) return(k)
+      parts <- strsplit(nm, ".", fixed = TRUE)[[1L]]
+      extra <- 0L
+      for (a in parts[-c(1L, 2L)]) {
+        if (grepl("^[0-9]+$", a)) extra <- extra + as.integer(a)
+        else seen_variable <<- TRUE
+      }
+      return(k + extra)
+    }
+
+    if (!is.call(e)) return(k)
+
+    fn <- as.character(e[[1L]])
+    args <- as.list(e)[-1L]
+
+    if (fn %in% c("delta", "newdiff") && length(args) >= 2L) {
+      n <- if (is.numeric(args[[1L]])) as.integer(args[[1L]]) else 0L
+      ## delta(n, x) reads x at t and at t-n; the deeper read wins
+      return(max(walk(args[[2L]], k), walk(args[[2L]], k + n)))
+    }
+
+    if (fn %in% c("lag", "mylg") && length(args) >= 2L) {
+      if (is.numeric(args[[2L]])) return(walk(args[[1L]], k + as.integer(args[[2L]])))
+      seen_variable <<- TRUE
+      return(walk(args[[1L]], k))
+    }
+
+    if (length(args) == 0L) return(k)
+    max(vapply(args, walk, numeric(1), k = k))
+  }
+
+  e <- parse(text = text, keep.source = FALSE)
+  k <- if (length(e) == 0L) 0 else walk(e[[1L]], 0)
+  list(k = as.integer(k), variable = seen_variable)
+}
+
+#' The largest lag any of a model's formulas reaches
+#'
+#' @param formulas character vector of `new_formula`s
+#' @return list(k, variable)
+#' @keywords internal
+model_max_lag <- function(formulas) {
+  res <- lapply(formulas, formula_max_lag)
+  list(k = max(0L, vapply(res, `[[`, integer(1), "k")),
+       variable = any(vapply(res, `[[`, logical(1), "variable")))
+}

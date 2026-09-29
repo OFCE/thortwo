@@ -31,3 +31,14 @@ solve_cpp <- function(env, M, first, last, rtol, atol, max_iter, damping, verbos
 residuals_cpp <- function(env, M, row) {
   env$thor_cpp_residuals(M, as.integer(row - 1L))
 }
+
+#' Every equation's residual of a compiled model at one row
+#'
+#' @param env environment returned by [model_env()]
+#' @param M numeric data matrix
+#' @param row 1-based row
+#' @return numeric vector, one entry per equation, blocks in solve order
+#' @keywords internal
+residuals_cpp_all <- function(env, M, row) {
+  env$thor_cpp_residuals_all(M, as.integer(row - 1L))
+}

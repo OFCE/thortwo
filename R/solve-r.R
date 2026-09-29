@@ -142,3 +142,14 @@ solve_r <- function(env, M, first, last, rtol, atol, max_iter, damping, verbose)
 residuals_r <- function(env, M, row) {
   vapply(env$blocks, function(B) max(abs(B$res(row, M))), numeric(1))
 }
+
+#' Every equation's residual of an R-backend model at one row
+#'
+#' @param env environment returned by [model_env()]
+#' @param M numeric data matrix
+#' @param row 1-based row
+#' @return numeric vector, one entry per equation, blocks in solve order
+#' @keywords internal
+residuals_r_all <- function(env, M, row) {
+  unlist(lapply(env$blocks, function(B) B$res(row, M)), use.names = FALSE)
+}

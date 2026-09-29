@@ -4,7 +4,14 @@
 \alias{model_residuals}
 \title{Residuals of a model's equations at given periods}
 \usage{
-model_residuals(model, data, periods = NULL, index_time = "date", cache = NULL)
+model_residuals(
+  model,
+  data,
+  periods = NULL,
+  index_time = "date",
+  by = c("block", "equation"),
+  cache = NULL
+)
 }
 \arguments{
 \item{model}{a `thor_model`}
@@ -17,10 +24,17 @@ rows except the first.}
 
 \item{index_time}{name of the time column in `data`}
 
+\item{by}{`"block"` (the default) for the largest absolute residual per
+block, or `"equation"` for every equation's residual. Use `"equation"` to
+find out *which* equation is off -- when checking a calibration, for
+instance, where the answer is a list of equations to go and look at.}
+
 \item{cache}{see [thor_solve()]}
 }
 \value{
-a matrix of maximum absolute residuals, periods by block
+a matrix of residuals, periods by block (absolute values, `"block"`)
+  or periods by equation (signed, `"equation"`, with the equation names as
+  column names)
 }
 \description{
 Evaluates every equation of the model at the given rows of the data and

@@ -40,9 +40,20 @@ thor_prepare <- function(model, from, to, data, index_time = "date") {
   if (is.na(first)) stop("The first period is not found in '", index_time, "'.", call. = FALSE)
   if (is.na(last))  stop("The last period is not found in '", index_time, "'.", call. = FALSE)
   if (last < first) stop("The last period comes before the first period.", call. = FALSE)
-  if (first == 1L) {
-    stop("The first period cannot be the first observation: the solver needs a ",
-         "previous full observation to initialise.", call. = FALSE)
+  ## The solver needs `max_lag` complete observations before the first solved
+  ## one: one to start Newton from, and as many as the deepest lag in the
+  ## model reads. Reading past the start of the data gives NA, which would
+  ## otherwise surface as a non-convergence with an infinite residual.
+  need <- max(1L, as.integer(model@meta$max_lag %||% 1L))
+  if (first <= need) {
+    stop("The first period to solve is ", key[first], ", row ", first,
+         " of the data, but this model reaches ", need,
+         " period(s) back, so it needs ", need,
+         " complete observation(s) before it.\n",
+         "Start at ", key[min(need + 1L, length(key))], " or later",
+         if (isTRUE(model@meta$variable_lag))
+           ", and note that the model also uses a lag given as a variable, whose depth is not known until the data is read"
+         else "", ".", call. = FALSE)
   }
 
   mv <- model@vars$all
@@ -57,11 +68,11 @@ thor_prepare <- function(model, from, to, data, index_time = "date") {
   M <- as.matrix(data[, mv, drop = FALSE])
   storage.mode(M) <- "double"
 
-  ## The period before the first solved one has to be complete: it seeds the
-  ## Newton start value and supplies every lagged term.
-  na_prev <- mv[is.na(M[first - 1L, ])]
+  ## Those observations also have to be complete: they seed the Newton start
+  ## value and supply every lagged term.
+  na_prev <- mv[apply(is.na(M[seq(first - need, first - 1L), , drop = FALSE]), 2L, any)]
   if (length(na_prev)) {
-    stop("The observation before the first period has missing values, so the ",
+    stop("The observation(s) before the first period have missing values, so the ",
          "solver cannot initialise: ",
          paste(utils::head(na_prev, 10), collapse = ", "),
          if (length(na_prev) > 10) sprintf(" (and %d more)", length(na_prev) - 10) else "",

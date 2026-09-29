@@ -2,6 +2,7 @@
 
 S3method(print,thor_sparse_jacobian)
 export(add_coeffs)
+export(calibration_check)
 export(clear_model_cache)
 export(data_model_checks)
 export(delta)

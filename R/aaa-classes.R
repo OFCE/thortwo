@@ -183,8 +183,16 @@ setMethod("show", "thor_model", function(object) {
   rules <- Deriv::drule
   assign("delta",   alist(x = 1, y = NULL), envir = rules)  # y is just a flag
   assign("newdiff", alist(x = 1, y = NULL), envir = rules)
-  ## quote() rather than alist(), equivalent here, but it keeps R's code
-  ## checker from reading the rule's `x` as an undefined global.
-  assign("abs", list(x = quote(ifelse(x == 0, 0, sign(x)))), envir = rules)
+  ## d|x|/dx is sign(x). tresthor registered this as
+  ## `ifelse(x == 0, 0, sign(x))`, which is the same function -- sign(0) is
+  ## already 0 -- but it puts an `ifelse` into every jacobian entry derived
+  ## from an abs(), and no code generator can translate that. The bug was
+  ## latent there only because none of the shipped models used abs().
+  assign("abs", list(x = quote(sign(x))), envir = rules)
   invisible()
 }
+
+## Null-coalescing, for reading optional metadata off a model saved before a
+## field existed. Base R gained `%||%` in 4.4; thortwo supports 4.1.
+## @noRd
+`%||%` <- function(a, b) if (is.null(a)) b else a

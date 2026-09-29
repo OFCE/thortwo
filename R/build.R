@@ -138,6 +138,13 @@ thor_model <- function(name,
 
   equations_list$new_formula <- formatting_formulas(equations_list$formula)
 
+  ## How many complete observations the solver will need before the first
+  ## solved period. Cheap to work out here, and it turns an "inf residual"
+  ## at solve time into a sentence the caller can act on.
+  maxlag <- model_max_lag(equations_list$new_formula)
+  say("   the model reaches ", maxlag$k, " period(s) back",
+      if (maxlag$variable) ", plus at least one lag given as a variable" else "", "\n")
+
   ## Blocks are kept in solve order; an empty block is simply absent.
   block_spec <- list(
     prologue = list(present = d$prologue, endo = sort(d$prologue_endo),
@@ -228,7 +235,9 @@ thor_model <- function(name,
                      built_at = Sys.time(),
                      source = if (is.null(source)) NA_character_ else normalizePath(source),
                      source_hash = source_hash,
-                     decompose = decompose))
+                     decompose = decompose,
+                     max_lag = maxlag$k,
+                     variable_lag = maxlag$variable))
   methods::validObject(model)
 
   ################################

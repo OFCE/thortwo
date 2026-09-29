@@ -12,7 +12,8 @@
 #' * [thor_save()] / [thor_load()] move a built model between sessions and
 #'   machines, generated source and all.
 #' * [model_residuals()] checks that a solution really does satisfy the
-#'   equations.
+#'   equations, per block or per equation; [calibration_check()] names the
+#'   equations a dataset fails at a given period.
 #'
 #' @keywords internal
 #' @importFrom methods new validObject is setClass setValidity setMethod show
