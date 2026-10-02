@@ -166,6 +166,9 @@ compile_model_cpp <- function(path, key = NULL, rebuild = FALSE, cache = NULL,
 
   env <- new.env(parent = globalenv())
 
+  ## the user's own setting, for the diagnosis should the compile fail
+  user_makevars <- Sys.getenv("R_MAKEVARS_USER", unset = NA)
+
   if (!debug) {
     ## Start from the platform's own flags so we keep -arch, -falign-functions
     ## and anything else the build was configured with, and only drop -g.
@@ -183,10 +186,10 @@ compile_model_cpp <- function(path, key = NULL, rebuild = FALSE, cache = NULL,
                  paste0("CXX17FLAGS = ", cxxflags),
                  paste0("CXX20FLAGS = ", cxxflags)), mk)
 
-    old <- Sys.getenv("R_MAKEVARS_USER", unset = NA)
     Sys.setenv(R_MAKEVARS_USER = mk)
     on.exit({
-      if (is.na(old)) Sys.unsetenv("R_MAKEVARS_USER") else Sys.setenv(R_MAKEVARS_USER = old)
+      if (is.na(user_makevars)) Sys.unsetenv("R_MAKEVARS_USER")
+      else Sys.setenv(R_MAKEVARS_USER = user_makevars)
       unlink(mk)
     }, add = TRUE)
   }
@@ -194,8 +197,14 @@ compile_model_cpp <- function(path, key = NULL, rebuild = FALSE, cache = NULL,
   cache_dir <- if (is.null(cache)) thor_cache_dir() else if (isFALSE(cache)) NULL else cache
   if (is.null(cache_dir)) cache_dir <- tempdir()
 
-  Rcpp::sourceCpp(path, env = env, rebuild = rebuild,
-                  cacheDir = cache_dir, verbose = !quiet)
+  ## A failure here is far more often the machine's toolchain than the
+  ## generated code (see toolchain.R), so say so instead of leaving the user
+  ## with a page of errors from system headers.
+  tryCatch(
+    Rcpp::sourceCpp(path, env = env, rebuild = rebuild,
+                    cacheDir = cache_dir, verbose = !quiet),
+    error = function(e) stop(compile_failure_message(e, user_makevars), call. = FALSE)
+  )
 
   if (!exists("thor_cpp_solve", envir = env, inherits = FALSE)) {
     stop("'", basename(path), "' does not define thor_cpp_solve(). ",

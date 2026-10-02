@@ -1,3 +1,4 @@
+
 ## Opale, on all three backends, over 40 quarters.
 ##
 ## Opale is the quarterly French macro model shipped with the package: 496
@@ -5,6 +6,7 @@
 ## but structurally harder -- quarterly data, heavy use of lags and of the
 ## `trim` seasonal index, and a large epilogue of accounting identities -- so
 ## it exercises the jacobians and the code generators on a shape of model
+
 ## ThreeME does not reach.
 ##
 ## Usage:  Rscript tests/test_opale.R [sparse|dense-cpp|dense-r|all]

@@ -11,6 +11,7 @@
 full <- identical(commandArgs(trailingOnly = TRUE)[1], "full")
 
 scripts <- list(
+  c("tests/test_toolchain.R", ""),
   c("tests/test_roundtrip.R", ""),
   c("tests/test_opale.R",     "all"),
   c("tests/test_isolation.R", ""),

@@ -66,6 +66,28 @@ changed. A saved model is therefore portable: it can be mailed, committed, or
 reused after a reboot. Whether compilation actually happens is decided by the
 cache, not by whether you saved.
 
+## When a model fails to compile
+
+If `thor_model()` fails on `sparse` or `dense-cpp` with compiler errors that
+point into system headers (`math.h`, `cstdint`, ...) rather than into the
+model's `.cpp`, the machine cannot compile Rcpp code at all. Run:
+
+```r
+thortwo::thor_check_toolchain()
+```
+
+It compiles a few lines of Rcpp + RcppEigen the way a model build does, lists
+the Makevars files R is applying, and flags the lines in them known to break
+compilation. The usual culprit is a personal `~/.R/Makevars` (or a file named
+by `R_MAKEVARS_USER`) written to work around one compiler or SDK update, such as
+
+```
+CXXFLAGS=-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1
+```
+
+which then breaks on the next one. Remove the line, restart R. In the
+meantime `backend = "dense-r"` needs no compiler.
+
 ## Tests
 
 ```sh
