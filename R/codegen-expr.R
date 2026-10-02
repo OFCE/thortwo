@@ -110,7 +110,10 @@ cpp_expr <- function(e, vidx, toff = cpp_t0()) {
   if (is.numeric(e)) {
     if (length(e) != 1L) stop("Unexpected vector constant in a model formula.")
     ## always emit a double literal so integer division never happens in C++
-    return(format(as.double(e), digits = 17L, scientific = FALSE, trim = TRUE))
+    ## (format() alone gives "1" for 1.0, so add the ".0" ourselves)
+    s <- sprintf("%.17g", as.double(e))
+    if (!grepl("[.eEn]", s)) s <- paste0(s, ".0")
+    return(s)
   }
 
   ## --- symbols -------------------------------------------------------------
