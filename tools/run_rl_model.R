@@ -10,9 +10,14 @@
 ##
 ## The first run compiles the generated C++ (a minute or two at this size);
 ## later runs hit thortwo's compile cache and start solving almost immediately.
+##
+## The translation step is ermeeth2::prg_to_thor(), so ermeeth2 has to be
+## installed; thortwo itself does not depend on it.
 
 suppressMessages(library(thortwo))
-source("tools/prg_to_thor.R")
+if (!requireNamespace("ermeeth2", quietly = TRUE)) {
+  stop("tools/run_rl_model.R needs ermeeth2 for prg_to_thor().", call. = FALSE)
+}
 
 n_periods <- suppressWarnings(as.integer(commandArgs(trailingOnly = TRUE)[1]))
 if (is.na(n_periods)) n_periods <- 30L
@@ -32,10 +37,11 @@ cat("\n================ 1. translate ================\n")
 model_txt <- file.path(WORK, "rl_model.txt")
 
 t_tr <- system.time(
-  tr <- prg_to_thor(PRG, CALIB, base_year = BASE_YEAR, out_file = model_txt)
+  tr <- ermeeth2::prg_to_thor(PRG, CALIB, base.year = BASE_YEAR,
+                              out_file = model_txt)
 )[["elapsed"]]
 
-translate_report(tr)
+ermeeth2::translate_report(tr)
 cat("translated in", round(t_tr, 1), "s ->", model_txt, "\n")
 
 if (length(tr$warnings)) {
