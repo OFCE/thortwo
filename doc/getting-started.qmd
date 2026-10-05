@@ -129,6 +129,7 @@ That is all most scripts need. All the options:
 | `recompile` | `FALSE` | `TRUE` builds and compiles from scratch even if this model is in the cache. |
 | `workdir` | `NULL` | Where the generated code is written. Leave it alone: the default is what lets the cache recognise a model it has already compiled. |
 | `verbose` | `TRUE` | Print progress. |
+| `timings` | `TRUE` | Print how long the build and the compilation took, even with `verbose = FALSE`. Also kept in `m@meta$timings`. |
 
 Instead of a file, the model can be given as vectors, through `endogenous`,
 `exogenous`, `coefficients` and `equations`.
@@ -236,6 +237,7 @@ result <- thor_solve(model, from = 2016, to = 2030,
 | `damping` | `TRUE` | Shorten a Newton step that would make things worse. Leave it on. |
 | `reuse_jacobian` | on, except on `"sparse-r"` | Reuse the factorised jacobian within a period, which makes large models solve about three times faster. `FALSE` gives plain Newton. See [below](#reusing-the-jacobian). |
 | `verbose` | `TRUE` | Print progress. |
+| `timings` | `TRUE` | With `verbose = FALSE`, print how long the solve took. With `verbose = TRUE` the summary line already says. |
 | `diagnostics` | `FALSE` | Attach per-period details to the result (below). |
 
 The solver works period by period. Within a period it solves the prologue, then

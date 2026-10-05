@@ -25,6 +25,7 @@ options(thortwo.cache.dir = cache)
 build_in_new_session <- function(extra = "") {
   script <- sprintf('
     suppressMessages(pkgload::load_all(".", quiet = TRUE))
+    options(thortwo.timings = FALSE)    # stdout is parsed below
     options(thortwo.cache.dir = "%s", thortwo.model.cache = FALSE)
     t <- system.time(m <- thor_model("cachetest", "%s", backend = "sparse",
                                      workdir = "%s", verbose = FALSE))[["elapsed"]]
@@ -49,6 +50,7 @@ cat("\n=== cache off ===\n")
 nocache <- function() {
   script <- sprintf('
     suppressMessages(pkgload::load_all(".", quiet = TRUE))
+    options(thortwo.timings = FALSE)    # stdout is parsed below
     t <- system.time(m <- thor_model("cacheoff", "%s", backend = "sparse",
                                      workdir = "%s", cache = FALSE,
                                      verbose = FALSE))[["elapsed"]]

@@ -18,6 +18,20 @@ with 16 GB.
 The compile and build figures are with `Verif_ALL` written without its square
 root (see below); with it, the compile is 112 s.
 
+## Timings
+
+* **`thor_model()` and `thor_solve()` report how long they took**, by default
+  and whether or not `verbose` is on:
+
+      Timings: build 38.4 s, compile 44.1 s, total 1 min 23 s
+      Timings: solve 1 min 14 s (38 periods)
+
+  `build` is the work done in R, `compile` the C++ compilation (or, from the
+  cache, the time to load it). The build's figures are kept in
+  `model@meta$timings`. `timings = FALSE` on either function, or
+  `options(thortwo.timings = FALSE)`, switches the display off. A script that
+  reads what a quiet build prints will now see this extra line.
+
 ## Solving
 
 * **`thor_solve()` reuses the factorised jacobian within a period**

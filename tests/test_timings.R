@@ -38,22 +38,22 @@ for (backend in c("sparse", "sparse-r")) {
   ok("no compile time when nothing is compiled",
      is.na(m3@meta$timings[["compile"]]) && !grepl("compile", line(out)), line(out))
 
-  out <- capture.output(thor_model(nm, f, backend = backend, cache = FALSE, verbose = TRUE))
+  out <- capture.output(m4 <- thor_model(nm, f, backend = backend, cache = FALSE, verbose = TRUE))
   ok("a verbose build prints it once", length(line(out)) == 1L)
 
-  out <- capture.output(thor_model(nm, f, backend = backend, cache = FALSE, verbose = FALSE, timings = FALSE))
+  out <- capture.output(m4 <- thor_model(nm, f, backend = backend, cache = FALSE, verbose = FALSE, timings = FALSE))
   ok("timings = FALSE prints nothing", length(out) == 0L)
 
   out <- capture.output(r <- thor_solve(m, 2, 6, d, verbose = FALSE))
   ok("a quiet solve prints its time", length(line(out)) == 1L && grepl("solve .* s \\(5 periods\\)", line(out)), line(out))
-  out <- capture.output(thor_solve(m, 2, 6, d, verbose = TRUE))
+  out <- capture.output(r <- thor_solve(m, 2, 6, d, verbose = TRUE))
   ok("a verbose solve does not repeat it", length(line(out)) == 0L && any(grepl("^Solved 5 periods in", out)))
-  out <- capture.output(thor_solve(m, 2, 6, d, verbose = FALSE, timings = FALSE))
+  out <- capture.output(r <- thor_solve(m, 2, 6, d, verbose = FALSE, timings = FALSE))
   ok("timings = FALSE prints nothing", length(out) == 0L)
 
   old <- options(thortwo.timings = FALSE)
-  out <- capture.output({ thor_model(nm, f, backend = backend, cache = FALSE, verbose = FALSE)
-                          thor_solve(m, 2, 6, d, verbose = FALSE) })
+  out <- capture.output({ m4 <- thor_model(nm, f, backend = backend, cache = FALSE, verbose = FALSE)
+                          r <- thor_solve(m, 2, 6, d, verbose = FALSE) })
   options(old)
   ok("options(thortwo.timings = FALSE) switches both off", length(out) == 0L)
 }
