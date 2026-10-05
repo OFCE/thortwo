@@ -10,7 +10,7 @@ with 16 GB.
 | | early October | now |
 |---|---|---|
 | translating the `.prg` (ermeeth2) | 192 s | 19 s |
-| building: work in R | about 54 min | 52 s |
+| building: work in R | about 54 min | 38 s |
 | building: C++ compile | 24 min | 44 s |
 | building the same model again | the above, minus the compile | 0.5 s |
 | solving 38 years | 196 s | 74 s |
@@ -84,6 +84,12 @@ root (see below); with it, the compile is 112 s.
 * **The decomposition keeps running counts** instead of recounting every
   variable's occurrences on each pass: 22 s to 0.3 s on ThreeME 29x33, with
   identical blocks.
+
+* **Reading the model is quicker**: 20 s to 3 s on ThreeME 29x33. The
+  endogenous variables of every equation are now identified in one pass
+  (12.6 s to 1.2 s), and the names used in the equations are extracted once
+  instead of once for each of the three lists of variables (6 s to 2 s).
+  The generated code is unchanged.
 
 * **Variable positions are looked up through a hash table** during code
   generation: 56 s to 9 s on ThreeME 29x33. The generated code is unchanged.

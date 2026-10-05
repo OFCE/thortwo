@@ -146,9 +146,10 @@ thor_model <- function(name,
   check_variable_conflict(endo, coeff, "the endogenous variables", "the coefficients")
   check_variable_conflict(exo,  coeff, "the exogenous variables", "the coefficients")
 
-  exo   <- is_in_formulas(exo,   eqlist, "exogenous",   verbose)
-  endo  <- is_in_formulas(endo,  eqlist, "endogenous",  verbose)
-  coeff <- is_in_formulas(coeff, eqlist, "coefficient", verbose)
+  used  <- variables_in_formulas(eqlist)
+  exo   <- is_in_formulas(exo,   eqlist, "exogenous",   verbose, present = used)
+  endo  <- is_in_formulas(endo,  eqlist, "endogenous",  verbose, present = used)
+  coeff <- is_in_formulas(coeff, eqlist, "coefficient", verbose, present = used)
   all_model_variables <- sort(c(endo, exo, coeff))
 
   equations_list <- create_equations_list(eqlist, verbose)
