@@ -17,7 +17,8 @@ thor_solve(
   reuse_jacobian = NULL,
   cache = NULL,
   verbose = TRUE,
-  diagnostics = FALSE
+  diagnostics = FALSE,
+  timings = getOption("thortwo.timings", TRUE)
 )
 }
 \arguments{
@@ -69,6 +70,10 @@ sessions, FALSE to disable, or NULL (the default) for [thor_cache_dir()].}
 
 \item{diagnostics}{logical. Attach per-period iteration counts, residuals
 and convergence measures to the result as attributes. Default FALSE.}
+
+\item{timings}{logical. TRUE (the default) to print how long the solve
+took when `verbose` is off; with `verbose` on, the summary line already
+says. `options(thortwo.timings = FALSE)` switches it off everywhere.}
 }
 \value{
 `data`, with the endogenous variables solved over `from`..`to`.

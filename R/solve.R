@@ -134,6 +134,9 @@ thor_prepare <- function(model, from, to, data, index_time = "date") {
 #' @param cache directory in which to cache the compiled object between
 #'   sessions, FALSE to disable, or NULL (the default) for [thor_cache_dir()].
 #' @param verbose logical. Print progress. Default TRUE.
+#' @param timings logical. TRUE (the default) to print how long the solve
+#'   took when `verbose` is off; with `verbose` on, the summary line already
+#'   says. `options(thortwo.timings = FALSE)` switches it off everywhere.
 #' @param diagnostics logical. Attach per-period iteration counts, residuals
 #'   and convergence measures to the result as attributes. Default FALSE.
 #'
@@ -143,7 +146,8 @@ thor_solve <- function(model, from, to, data,
                        index_time = "date",
                        rtol = 1e-10, atol = 1e-8, max_iter = 100L,
                        damping = TRUE, reuse_jacobian = NULL, cache = NULL,
-                       verbose = TRUE, diagnostics = FALSE) {
+                       verbose = TRUE, diagnostics = FALSE,
+                       timings = getOption("thortwo.timings", TRUE)) {
 
   if (!methods::is(model, "thor_model")) {
     stop("`model` must be a thor_model, as returned by thor_model().", call. = FALSE)
@@ -184,6 +188,9 @@ thor_solve <- function(model, from, to, data,
         sum(out$iterations), " Newton iterations, worst scaled step ",
         format(max(out$convergence), digits = 3), " (converges at 1), max |residual| ",
         format(max(out$residuals), digits = 3), ")\n", sep = "")
+  } else if (isTRUE(timings)) {
+    cat("Timings: solve ", format_seconds(t_run[["elapsed"]]), " (",
+        prep$last - prep$first + 1L, " periods)\n", sep = "")
   }
 
   if (diagnostics) {
