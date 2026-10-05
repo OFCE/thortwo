@@ -18,7 +18,8 @@ thor_model(
   compile = TRUE,
   cache = NULL,
   recompile = FALSE,
-  verbose = TRUE
+  verbose = TRUE,
+  timings = getOption("thortwo.timings", TRUE)
 )
 }
 \arguments{
@@ -58,6 +59,11 @@ this exact model if there is one; TRUE to build and compile from scratch,
 replacing it. See the section on the cache.}
 
 \item{verbose}{logical. TRUE (the default) to report progress.}
+
+\item{timings}{logical. TRUE (the default) to print how long the build and
+the compilation took, whether or not `verbose` is on. They are also kept
+in the model, see the section on timings.
+`options(thortwo.timings = FALSE)` switches the display off everywhere.}
 }
 \value{
 a [thor_model-class] object
@@ -66,6 +72,20 @@ a [thor_model-class] object
 Reads a model, checks it, decomposes it into blocks, differentiates it
 symbolically, generates a model-specific solver and compiles it.
 }
+\section{Timings}{
+
+Two durations are reported, in seconds. `build` is the work done in R:
+reading the model, decomposing it, deriving the jacobians and generating
+the solver's code. `compile` is turning that code into something that
+runs: the C++ compilation, or for `"sparse-r"` evaluating the R code. When
+the model comes from the cache, `build` is the time of the lookup and
+`compile` the time to load the compiled code, which is a full compilation
+only if that was not cached either.
+
+The figures of the last call are in `model@meta$timings`, a named vector
+`c(build, compile)` with an attribute `from_cache`.
+}
+
 \section{Sequential prologue and epilogue}{
 
 An advanced option. With `sequential = TRUE`, each equation of the prologue

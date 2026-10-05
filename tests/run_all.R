@@ -17,6 +17,7 @@ scripts <- list(
   c("tests/test_sequential.R", ""),
   c("tests/test_nan.R", ""),
   c("tests/test_reuse.R", ""),
+  c("tests/test_timings.R", ""),
   c("tests/test_opale.R",     "all"),
   c("tests/test_isolation.R", ""),
   c("tests/test_cache.R",     ""),

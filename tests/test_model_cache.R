@@ -89,6 +89,7 @@ cat("\n=== across sessions, with compiled code ===\n")
 in_new_session <- function() {
   script <- sprintf('
     suppressMessages(pkgload::load_all(".", quiet = TRUE))
+    options(thortwo.timings = FALSE)    # stdout is parsed below
     options(thortwo.cache.dir = "%s")
     hit <- FALSE
     t <- system.time(m <- withCallingHandlers(

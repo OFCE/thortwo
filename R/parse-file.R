@@ -217,23 +217,38 @@ check_eq_var_identification <- function(endo, eqns, names_of_equations) {
   invisible(TRUE)
 }
 
+#' Every variable name occurring in a set of equations
+#'
+#' The expensive half of [is_in_formulas()]: on ThreeME 29x33 it takes 2 s.
+#' [thor_model()] checks three lists of names against the same equations, so
+#' it works this out once and passes it on.
+#'
+#' @param formulas character vector of equations
+#' @return character vector of names, lower case
+#' @keywords internal
+variables_in_formulas <- function(formulas) {
+  ## drop an equation name; `name : eq`, with spaces, is as valid as `name:eq`
+  ## (with the spaces left in, "demand : y = ..." read as the token "demand:y"
+  ## and `y` was dropped as unused)
+  formulas <- gsub("^\\s*\\w+\\s*:", "", formulas)
+  get_variables_from_string(tolower(paste(formulas, collapse = "-")))
+}
+
 #' Which of these variables actually occur in the equations
 #'
 #' @param variables_to_test character vector of names
 #' @param formulas character vector of equations
 #' @param print_type what is being tested, for the message
 #' @param verbose report what was found as well as what was dropped
+#' @param present the names occurring in `formulas`, as returned by
+#'   [variables_in_formulas()], when the caller already has them
 #' @return the subset of `variables_to_test` that occurs in `formulas`
 #' @keywords internal
-is_in_formulas <- function(variables_to_test, formulas, print_type = "", verbose = TRUE) {
+is_in_formulas <- function(variables_to_test, formulas, print_type = "", verbose = TRUE,
+                           present = variables_in_formulas(formulas)) {
   if (length(variables_to_test) == 0L) return(character(0))
-  ## drop an equation name; `name : eq`, with spaces, is as valid as `name:eq`
-  ## (with the spaces left in, "demand : y = ..." read as the token "demand:y"
-  ## and `y` was dropped as unused)
-  formulas <- gsub("^\\s*\\w+\\s*:", "", formulas)
   variables_to_test <- tolower(variables_to_test)
 
-  present <- get_variables_from_string(tolower(paste(formulas, collapse = "-")))
   absent  <- setdiff(variables_to_test, present)
 
   if (verbose) {

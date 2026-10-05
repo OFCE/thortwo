@@ -1,7 +1,7 @@
 Package: thortwo
 Type: Package
 Title: Build and Solve Large Macroeconomic Models
-Version: 0.9.0
+Version: 0.9.1
 Authors@R: c(
     person("Anissa", "Saumtally", email = "anissa.saumtally@sciencespo.fr",
            role = c("aut", "cre")),

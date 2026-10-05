@@ -38,6 +38,22 @@
 #'   this exact model if there is one; TRUE to build and compile from scratch,
 #'   replacing it. See the section on the cache.
 #' @param verbose logical. TRUE (the default) to report progress.
+#' @param timings logical. TRUE (the default) to print how long the build and
+#'   the compilation took, whether or not `verbose` is on. They are also kept
+#'   in the model, see the section on timings.
+#'   `options(thortwo.timings = FALSE)` switches the display off everywhere.
+#'
+#' @section Timings:
+#' Two durations are reported, in seconds. `build` is the work done in R:
+#' reading the model, decomposing it, deriving the jacobians and generating
+#' the solver's code. `compile` is turning that code into something that
+#' runs: the C++ compilation, or for `"sparse-r"` evaluating the R code. When
+#' the model comes from the cache, `build` is the time of the lookup and
+#' `compile` the time to load the compiled code, which is a full compilation
+#' only if that was not cached either.
+#'
+#' The figures of the last call are in `model@meta$timings`, a named vector
+#' `c(build, compile)` with an attribute `from_cache`.
 #'
 #' @section Sequential prologue and epilogue:
 #' An advanced option. With `sequential = TRUE`, each equation of the prologue
@@ -83,7 +99,8 @@ thor_model <- function(name,
                        compile = TRUE,
                        cache = NULL,
                        recompile = FALSE,
-                       verbose = TRUE) {
+                       verbose = TRUE,
+                       timings = getOption("thortwo.timings", TRUE)) {
 
   t_start <- Sys.time()
   backend <- match.arg(normalise_backend(backend[1L]), thor_backends)
@@ -134,7 +151,12 @@ thor_model <- function(name,
               "using the existing cache.\n",
               "To recompile, use recompile = TRUE and rerun the build.")
       if (!is.null(source)) cached@meta$source <- normalizePath(source)
-      return(attach_model(cached, compile = compile, workdir = workdir, cache = cache))
+      t_found <- Sys.time()
+      cached <- attach_model(cached, compile = compile, workdir = workdir, cache = cache)
+      cached@meta$timings <- build_timings(t_start, t_found, Sys.time(),
+                                           compiled = compile, from_cache = TRUE)
+      if (isTRUE(timings)) print_build_timings(cached@meta$timings)
+      return(cached)
     }
   }
 
@@ -146,9 +168,10 @@ thor_model <- function(name,
   check_variable_conflict(endo, coeff, "the endogenous variables", "the coefficients")
   check_variable_conflict(exo,  coeff, "the exogenous variables", "the coefficients")
 
-  exo   <- is_in_formulas(exo,   eqlist, "exogenous",   verbose)
-  endo  <- is_in_formulas(endo,  eqlist, "endogenous",  verbose)
-  coeff <- is_in_formulas(coeff, eqlist, "coefficient", verbose)
+  used  <- variables_in_formulas(eqlist)
+  exo   <- is_in_formulas(exo,   eqlist, "exogenous",   verbose, present = used)
+  endo  <- is_in_formulas(endo,  eqlist, "endogenous",  verbose, present = used)
+  coeff <- is_in_formulas(coeff, eqlist, "coefficient", verbose, present = used)
   all_model_variables <- sort(c(endo, exo, coeff))
 
   equations_list <- create_equations_list(eqlist, verbose)
@@ -311,6 +334,7 @@ thor_model <- function(name,
   ################################
   #### 7. Compile
   ################################
+  t_built <- Sys.time()
   if (compile) {
     say("\nStep 6: ", if (is_r_backend(backend)) "evaluating" else "compiling", "...\n")
     el <- system.time(model_env(model, cache = cache,
@@ -318,11 +342,56 @@ thor_model <- function(name,
     say("   ready in ", round(el, 1), " s", if (el < 1) "  (from cache)" else "", "\n")
   }
 
+  ## Set before the model is stored, so the cached copy is complete; a later
+  ## cache hit replaces them with its own.
+  model@meta$timings <- build_timings(t_start, t_built, Sys.time(),
+                                      compiled = compile, from_cache = FALSE)
   model_cache_write(model, store)
 
-  say("\nModel built in ",
-      round(as.numeric(difftime(Sys.time(), t_start, units = "secs")), 1), " s\n")
+  if (verbose) cat("\n")
+  if (verbose || isTRUE(timings)) print_build_timings(model@meta$timings)
   model
+}
+
+#' The durations of a build
+#'
+#' @param t_start,t_built,t_end when the call started, when the model object
+#'   was ready, and when its code was compiled
+#' @param compiled whether the compile step ran at all
+#' @param from_cache whether the model came from the built-model cache
+#' @return named numeric vector `c(build, compile)` in seconds, `compile` NA
+#'   when it did not run, with an attribute `from_cache`
+#' @keywords internal
+build_timings <- function(t_start, t_built, t_end, compiled = TRUE, from_cache = FALSE) {
+  secs <- function(a, b) as.numeric(difftime(b, a, units = "secs"))
+  structure(c(build = secs(t_start, t_built),
+              compile = if (compiled) secs(t_built, t_end) else NA_real_),
+            from_cache = from_cache)
+}
+
+#' Print the durations of a build on one line
+#'
+#' @param x as returned by [build_timings()]
+#' @return `x`, invisibly
+#' @keywords internal
+print_build_timings <- function(x) {
+  cat("Timings: build ", format_seconds(x[["build"]]),
+      if (isTRUE(attr(x, "from_cache"))) " (from the cache)" else "",
+      if (!is.na(x[["compile"]])) paste0(", compile ", format_seconds(x[["compile"]])) else "",
+      ", total ", format_seconds(sum(x, na.rm = TRUE)), "\n", sep = "")
+  invisible(x)
+}
+
+#' A duration in seconds, for a message
+#'
+#' @param s seconds
+#' @return character, e.g. "0.52 s", "38.4 s", "2 min 05 s"
+#' @keywords internal
+format_seconds <- function(s) {
+  if (s < 9.995) return(sprintf("%.2f s", s))
+  if (s < 59.95) return(sprintf("%.1f s", s))
+  s <- round(s)
+  sprintf("%d min %02d s", as.integer(s %/% 60), as.integer(s %% 60))
 }
 
 #' Pair each block's jacobian with its formulas, for the code generators

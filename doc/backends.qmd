@@ -162,7 +162,7 @@ its own:
 
 | ThreeME 29x33, `"sparse"` | time |
 |---|---|
-| build: work in R | 52 s |
+| build: work in R | 38 s |
 | build: compile | 44 s |
 | build, when the model is already in the cache | 0.5 s |
 | solve, 38 years | 74 s |

@@ -4,7 +4,13 @@
 \alias{is_in_formulas}
 \title{Which of these variables actually occur in the equations}
 \usage{
-is_in_formulas(variables_to_test, formulas, print_type = "", verbose = TRUE)
+is_in_formulas(
+  variables_to_test,
+  formulas,
+  print_type = "",
+  verbose = TRUE,
+  present = variables_in_formulas(formulas)
+)
 }
 \arguments{
 \item{variables_to_test}{character vector of names}
@@ -14,6 +20,9 @@ is_in_formulas(variables_to_test, formulas, print_type = "", verbose = TRUE)
 \item{print_type}{what is being tested, for the message}
 
 \item{verbose}{report what was found as well as what was dropped}
+
+\item{present}{the names occurring in `formulas`, as returned by
+[variables_in_formulas()], when the caller already has them}
 }
 \value{
 the subset of `variables_to_test` that occurs in `formulas`
