@@ -95,4 +95,30 @@ check_agree(endo_matrix(res_old_there, old_there, rows), endo_matrix(res_r, r, r
             label = "an old dense-r model is converted correctly there")
 invisible(Sys.setlocale("LC_COLLATE", before))
 
+## ---------------------------------------------------------------------------
+## A badly scaled block is not a singular one
+## ---------------------------------------------------------------------------
+## Matrix's solve() refuses a factorisation whose pivots are more than 1/eps
+## apart ("computationally singular"), which is a test of scaling. The epilogue
+## of ThreeME 4x4 has pivots from 9e-13 to 1e7 and stopped the R backend there
+## while the compiled one solved it. Here the pivots are 1e10 and 9e-10.
+cat("\n=== badly scaled block ===\n")
+sc_dir <- new_tmpdir("thortwo_scale_")
+sc_file <- file.path(sc_dir, "scale.txt")
+writeLines(c("endogenous :", "x, y", "exogenous :", "a, b, g, h", "coefficients :", "",
+             "equations :", "a*x + y = g", "x + b*y = h"), sc_file)
+sc_data <- data.frame(date = 1:4, x = 0, y = 0, a = 1e10, b = 1e-9, g = 2e10, h = 3)
+sc_sol <- list()
+for (backend in c("sparse-r", "sparse")) {
+  m_sc <- thor_model(paste0("scale_", sub("-", "", backend)), sc_file, backend = backend,
+                     cache = FALSE, verbose = FALSE)
+  sc_sol[[backend]] <- thor_solve(m_sc, 2, 4, sc_data, verbose = FALSE)
+  ok(paste(backend, "solves it"), TRUE)
+}
+ok("and both backends agree",
+   isTRUE(all.equal(sc_sol[["sparse-r"]][2:4, c("x", "y")], sc_sol[["sparse"]][2:4, c("x", "y")],
+                    tolerance = 1e-9)),
+   sprintf("x = %.6g, y = %.6g", sc_sol[["sparse-r"]]$x[4], sc_sol[["sparse-r"]]$y[4]))
+unlink(sc_dir, recursive = TRUE)
+
 cat("\nPASS\n")

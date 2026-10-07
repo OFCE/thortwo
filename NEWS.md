@@ -122,6 +122,15 @@ root (see below); with it, the compile is 112 s.
 
 ## Fixes
 
+* **The pure-R backend no longer rejects a badly scaled block as singular.**
+  The Matrix package refuses to solve when a jacobian's smallest and largest
+  pivots are more than about 1e16 apart. That is a test of scaling, not of
+  singularity, and the compiled backends make no such test. It stopped
+  ThreeME 4x4 on `"sparse-r"` at the first period ("Newton did not converge
+  on block 'epilogue' ... scaled step Inf"), where `"sparse"` solved it. The
+  test is now switched off; a matrix that really is singular is still caught.
+  Needs Matrix 1.6-0 or later.
+
 * A named equation written with a space before the colon
   (`demand : y = ...`) made the first variable after the colon look unused,
   and it was dropped.

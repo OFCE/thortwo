@@ -77,7 +77,15 @@ newton_block_r <- function(B, J, M, t, rtol, atol, max_iter, damping, reuse = FA
         lu <- tryCatch(suppressWarnings(Matrix::lu(J)), error = function(e) NULL)
         if (is.null(lu)) return(fail())
       }
-      dx <- tryCatch(as.numeric(suppressWarnings(Matrix::solve(lu, f))),
+      ## `tol = 0`: Matrix refuses to solve when the smallest and the largest
+      ## pivot are more than 1/eps apart, calling the matrix "computationally
+      ## singular". That is a test of scaling, not of singularity, and a
+      ## model's jacobian can fail it while being perfectly solvable: the
+      ## epilogue of ThreeME 4x4 has pivots from 9e-13 to 1e7, each in an
+      ## equation of its own, and the step it gives is exact to 1e-16. The
+      ## compiled backends make no such test. A matrix that really is singular
+      ## is still caught, by lu() or by the check on `dx` just below.
+      dx <- tryCatch(as.numeric(suppressWarnings(Matrix::solve(lu, f, tol = 0))),
                      error = function(e) NULL)
       if (is.null(dx) || !all(is.finite(dx))) {
         if (!fresh) { fresh <- TRUE; next }
