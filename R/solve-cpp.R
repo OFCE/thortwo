@@ -11,10 +11,13 @@
 #' @param M numeric data matrix, variables in alphabetical order
 #' @param first,last 1-based rows of the first and last period to solve
 #' @param rtol,atol,max_iter,damping,verbose see [thor_solve()]
+#' @param labels the periods as the time index names them, one per row of `M`;
+#'   used in the progress line and in error messages
 #' @return list with `data`, `iterations`, `residuals`, `convergence`
 #' @keywords internal
 solve_cpp <- function(env, M, first, last, rtol, atol, max_iter, damping, verbose,
-                      reuse = FALSE, reuse_asked = FALSE) {
+                      reuse = FALSE, reuse_asked = FALSE,
+                      labels = as.character(seq_len(nrow(M)))) {
   ## A model saved before 2026-10 carries generated code whose entry point has
   ## no `reuse` argument. It still solves; it just cannot reuse.
   if (!"reuse" %in% names(formals(env$thor_cpp_solve))) {
@@ -26,11 +29,18 @@ solve_cpp <- function(env, M, first, last, rtol, atol, max_iter, damping, verbos
                               rtol, atol, as.integer(max_iter),
                               isTRUE(damping), isTRUE(verbose)))
   }
+  ## Likewise one saved before periods were reported by name: it reports rows.
+  if (!"labels" %in% names(formals(env$thor_cpp_solve))) {
+    return(env$thor_cpp_solve(M, as.integer(first - 1L), as.integer(last - 1L),
+                              rtol, atol, as.integer(max_iter),
+                              isTRUE(damping), isTRUE(reuse), isTRUE(verbose)))
+  }
   env$thor_cpp_solve(M,
                      as.integer(first - 1L),   # 0-based rows for C++
                      as.integer(last - 1L),
                      rtol, atol, as.integer(max_iter),
-                     isTRUE(damping), isTRUE(reuse), isTRUE(verbose))
+                     isTRUE(damping), isTRUE(reuse), isTRUE(verbose),
+                     as.character(labels))
 }
 
 #' Residuals of a compiled model at one row

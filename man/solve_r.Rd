@@ -14,7 +14,8 @@ solve_r(
   max_iter,
   damping,
   verbose,
-  reuse = FALSE
+  reuse = FALSE,
+  labels = as.character(seq_len(nrow(M)))
 )
 }
 \arguments{
@@ -27,6 +28,9 @@ solve_r(
 \item{rtol, atol, max_iter, damping, verbose}{see [thor_solve()]}
 
 \item{reuse}{see `reuse_jacobian` in [thor_solve()]}
+
+\item{labels}{the periods as the time index names them, one per row of `M`;
+used in the progress line and in error messages}
 }
 \value{
 list with `data`, `iterations`, `residuals`, `convergence`

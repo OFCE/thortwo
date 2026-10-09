@@ -206,7 +206,7 @@ Where it does help:
   not converge:
 
   ```
-  Sequential solve failed on block 'prologue' at row 3: equation 'eq_2528' could
+  Sequential solve failed on block 'prologue' at 2021 (row 3): equation 'eq_2528' could
   not be solved for 'pk_sgzx'. Its derivative with respect to that variable is
   zero or not finite, or it did not converge in 100 iterations.
   ```

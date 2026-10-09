@@ -170,11 +170,11 @@ thor_solve <- function(model, from, to, data,
     out <- if (is_r_backend(model@backend)) {
       solve_r(env, prep$M, prep$first, prep$last, rtol, atol,
               as.integer(max_iter), isTRUE(damping), isTRUE(verbose),
-              reuse = reuse)
+              reuse = reuse, labels = prep$key)
     } else {
       solve_cpp(env, prep$M, prep$first, prep$last, rtol, atol,
                 as.integer(max_iter), isTRUE(damping), isTRUE(verbose),
-                reuse = reuse, reuse_asked = reuse_asked)
+                reuse = reuse, reuse_asked = reuse_asked, labels = prep$key)
     }
   })
 

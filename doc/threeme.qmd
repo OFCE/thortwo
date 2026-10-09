@@ -433,7 +433,7 @@ from the previous row. Start at the second row or later.
 Exactly what it says, with the names listed. Extend your exogenous paths to
 cover the whole horizon.
 
-**"Newton did not converge on block 'heart' at row N."** The message reports
+**"Newton did not converge on block 'heart' at 2021 (row N)."** The message reports
 the scaled step actually reached, the tolerance, and the worst residual. In
 order of likelihood: bad data at that period, an over-tight `rtol`, or a model
 that genuinely has no solution there. Try `max_iter = 200`, or look at the

@@ -4,7 +4,16 @@
 \alias{sequential_block_r}
 \title{Solve one block sequentially at one period}
 \usage{
-sequential_block_r(B, M, t, rtol, atol, max_iter, damping)
+sequential_block_r(
+  B,
+  M,
+  t,
+  rtol,
+  atol,
+  max_iter,
+  damping,
+  label = as.character(t)
+)
 }
 \arguments{
 \item{B}{a generated block with a `seq` function}
@@ -14,6 +23,8 @@ sequential_block_r(B, M, t, rtol, atol, max_iter, damping)
 \item{t}{1-based row}
 
 \item{rtol, atol, max_iter, damping}{see [thor_solve()]}
+
+\item{label}{the period at row `t`, as the time index names it}
 }
 \value{
 list with `M`, `iter`, `resid`, `conv`

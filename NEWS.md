@@ -34,6 +34,16 @@ root (see below); with it, the compile is 112 s.
 
 ## Solving
 
+* **Periods are reported by name.** The progress line of `thor_solve()` and
+  the non-convergence errors now show the period as `index_time` has it,
+  rather than its row in the data:
+
+      2021 (25 it)   2022 (25 it)   ...
+      Newton did not converge on block 'heart' at 2021 (row 3) after 100 iterations
+
+  A model saved by an earlier version still solves, and still reports rows
+  until it is rebuilt.
+
 * **`thor_solve()` reuses the factorised jacobian within a period**
   (`reuse_jacobian`). On a large model, factorising the jacobian is nearly
   the whole cost of a Newton iteration: 1.36 s on the heart of ThreeME 29x33,

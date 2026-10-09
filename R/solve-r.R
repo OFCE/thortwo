@@ -145,10 +145,12 @@ newton_block_r <- function(B, J, M, t, rtol, atol, max_iter, damping, reuse = FA
 #' @param first,last 1-based rows of the first and last period to solve
 #' @param rtol,atol,max_iter,damping,verbose see [thor_solve()]
 #' @param reuse see `reuse_jacobian` in [thor_solve()]
+#' @param labels the periods as the time index names them, one per row of `M`;
+#'   used in the progress line and in error messages
 #' @return list with `data`, `iterations`, `residuals`, `convergence`
 #' @keywords internal
 solve_r <- function(env, M, first, last, rtol, atol, max_iter, damping, verbose,
-                    reuse = FALSE) {
+                    reuse = FALSE, labels = as.character(seq_len(nrow(M)))) {
 
   without_jit()
 
@@ -170,15 +172,15 @@ solve_r <- function(env, M, first, last, rtol, atol, max_iter, damping, verbose,
       r <- if (is.null(B$seq)) {
         newton_block_r(B, seeds[[k]], M, t, rtol, atol, max_iter, damping, reuse)
       } else {
-        sequential_block_r(B, M, t, rtol, atol, max_iter, damping)
+        sequential_block_r(B, M, t, rtol, atol, max_iter, damping, labels[t])
       }
       M <- r$M
       if (r$iter < 0L) {
-        stop(sprintf(paste0("Newton did not converge on block '%s' at row %d after %d ",
+        stop(sprintf(paste0("Newton did not converge on block '%s' at %s (row %d) after %d ",
                             "iterations: scaled step %.3e (converges at 1.0, rtol %.3e), ",
                             "max |residual| %.3e. Try a looser rtol, a higher max_iter, ",
                             "or check the data at that period."),
-                     B$name, t, max_iter, r$conv, rtol, r$resid), call. = FALSE)
+                     B$name, labels[t], t, max_iter, r$conv, rtol, r$resid), call. = FALSE)
       }
       tot <- tot + r$iter
       worst <- max(worst, r$resid); worstc <- max(worstc, r$conv)
@@ -186,7 +188,7 @@ solve_r <- function(env, M, first, last, rtol, atol, max_iter, damping, verbose,
 
     i <- t - first + 1L
     iters[i] <- tot; resid[i] <- worst; conv[i] <- worstc
-    if (verbose) cat("  ", t, " (", tot, " it) ", sep = "")
+    if (verbose) cat("  ", labels[t], " (", tot, " it) ", sep = "")
   }
   if (verbose) cat("\n")
 
@@ -256,22 +258,24 @@ without_jit <- function(envir = parent.frame()) {
 #' @param M numeric data matrix
 #' @param t 1-based row
 #' @param rtol,atol,max_iter,damping see [thor_solve()]
+#' @param label the period at row `t`, as the time index names it
 #' @return list with `M`, `iter`, `resid`, `conv`
 #' @keywords internal
-sequential_block_r <- function(B, M, t, rtol, atol, max_iter, damping) {
+sequential_block_r <- function(B, M, t, rtol, atol, max_iter, damping,
+                               label = as.character(t)) {
   r <- B$seq(t, M, rtol, atol, max_iter, damping)
   if (r$fail > 0L) {
-    stop(sprintf(paste0("Sequential solve failed on block '%s' at row %d: equation '%s' could ",
+    stop(sprintf(paste0("Sequential solve failed on block '%s' at %s (row %d): equation '%s' could ",
                         "not be solved for '%s'. Its derivative with respect to that variable is ",
                         "zero or not finite, or it did not converge in %d iterations. Check the ",
                         "data at that period."),
-                 B$name, t, B$seq_eq[r$fail], B$seq_var[r$fail], max_iter), call. = FALSE)
+                 B$name, label, t, B$seq_eq[r$fail], B$seq_var[r$fail], max_iter), call. = FALSE)
   }
   resid <- max(abs(B$res(t, r$M)))
   if (is.na(resid)) {
-    stop(sprintf(paste0("Sequential solve of block '%s' at row %d produced a value that is not ",
+    stop(sprintf(paste0("Sequential solve of block '%s' at %s (row %d) produced a value that is not ",
                         "a number. Check the data at that period with calibration_check()."),
-                 B$name, t), call. = FALSE)
+                 B$name, label, t), call. = FALSE)
   }
   list(M = r$M, iter = r$iters, resid = resid, conv = r$conv)
 }
