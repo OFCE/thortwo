@@ -4,8 +4,7 @@ Title: Build and Solve Large Macroeconomic Models
 Version: 0.9.1
 Authors@R: c(
     person("Anissa", "Saumtally", email = "anissa.saumtally@sciencespo.fr",
-           role = c("aut", "cre")),
-    person("Charlotte", "Nudelmann", role = "ctb"))
+           role = c("aut", "cre"))
 Description: Parses a macroeconomic model written as a text file, decomposes it
     into prologue, heart and epilogue blocks, differentiates it symbolically,
     generates and compiles a model-specific C++ Newton solver, and solves the

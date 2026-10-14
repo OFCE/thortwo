@@ -10,7 +10,7 @@ execute:
   eval: false
 ---
 
-**In short:**
+**In short:** 
 
 - **`"sparse"`, the default:** compiled. The fastest solver by far, and its
   compiled code is cached, so it is the right choice for normal work: a model
